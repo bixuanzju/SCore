@@ -1,4 +1,7 @@
 module Main where
 
+import Language
+
 main :: IO ()
-main = undefined
+main = do contents <- readFile "test.txt"
+          putStrLn $ pprint $ parse contents
