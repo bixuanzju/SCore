@@ -4,6 +4,7 @@ import Data.Char (isAlpha)
 import Data.Char (isDigit)
 import Data.Char (isLetter)
 import Data.Char (isSpace)
+import Control.Monad (liftM)
 
 data Expr a
   = EVar Name
@@ -71,6 +72,7 @@ preludeDefs =
              (EVar "f"))
         (EVar "f"))]
 
+{- Pretty print -}
 data Iseq
   = INil
   | IStr String
@@ -157,6 +159,9 @@ pprint p = iDisplay $  iInterleave s (map pprScDefn p)
 aProgram :: CoreProgram
 aProgram = [("main",[],EAp (EVar "quadr") (ENum 20)),("quadr",["x"],ELet False [("twice_x",EAp (EAp (EVar "+") (EVar "x")) (EVar "x")),("three",EAp (EAp (EVar "+") (EVar "twice_x")) (EVar "x"))] (EAp (EAp (EVar "+") (EVar "twice_x")) (EVar "twice_x")))]
 
+
+{- Lexer and Parser -}
+
 type Token = (Int, String)
 
 twoCharOps :: [String]
@@ -182,54 +187,69 @@ isIdChar :: Char -> Bool
 isIdChar c = isAlpha c || isDigit c || (c == '_')
 
 
-type Parser a = [Token] -> [(a, [Token])]
+newtype Parser a = Parser {runParser :: [Token] -> [(a, [Token])]}
+
+instance Monad Parser where
+  return a = Parser (\toks -> [(a,toks)])
+  p >>= f =
+    Parser (\toks ->
+              [(r2,toks2) | (r1,toks1) <- runParser p toks
+                          , (r2,toks2) <- runParser (f r1) toks1])
+
 
 pAlt :: Parser a -> Parser a -> Parser a
-pAlt p1 p2 toks = (p1 toks) ++ (p2 toks)
+pAlt p1 p2 =
+  Parser (\toks ->
+            (runParser p1 toks) ++
+            (runParser p2 toks))
 
-pThen :: (a -> b -> c) -> Parser a -> Parser b -> Parser c
-pThen combine p1 p2 toks =
-  [(combine v1 v2,toks2) | (v1,toks1) <- p1 toks
-                         , (v2,toks2) <- p2 toks1]
 
 pGreeting :: Parser (String, String)
-pGreeting = pThen const (pThen (,) pHelloOrGoodbye pVar) (pLit "!")
+pGreeting =
+  do greeting <- pHelloOrGoodbye
+     somebody <- pVar
+     pLit "!"
+     return (greeting,somebody)
 
 pHelloOrGoodbye :: Parser String
 pHelloOrGoodbye = (pLit "hello") `pAlt` (pLit "goodbye")
 
 pZeroOrMore :: Parser a -> Parser [a]
-pZeroOrMore p = (pOneOrMore p) `pAlt` (pEmpty [])
+pZeroOrMore p = (pOneOrMore p) `pAlt` (return [])
 
 pOneOrMore :: Parser a -> Parser [a]
-pOneOrMore p toks =
-  [(r : rs,toks2) | (r,toks1) <- p toks
-                  , (rs,toks2) <- [head $
-                                   pZeroOrMore p toks1]]
-
-pEmpty :: a -> Parser a
-pEmpty v toks = [(v, toks)]
+-- pOneOrMore p = do r <- p
+--                   rs <- pZeroOrMore p
+--                   return (r:rs)
+pOneOrMore p =
+  Parser (\toks ->
+            [(r : rs,toks2) | (r,toks1) <- runParser p toks
+                            , (rs,toks2) <- [head .
+                                             runParser (pZeroOrMore p) $
+                                             toks1]])
 
 toToken :: [String] -> [Token]
 toToken = map (\s -> (1,s))
 
 pGreetingN :: Parser Int
-pGreetingN = (pZeroOrMore pGreeting) `pApply` length
-
-pApply :: Parser a -> (a -> b) -> Parser b
-pApply p f toks = [ (f r, toks1) | (r, toks1) <- p toks]
+pGreetingN = liftM length (pZeroOrMore pGreeting)
 
 pOneOrMoreWithSep :: Parser a -> Parser b -> Parser [a]
-pOneOrMoreWithSep p sep = pThen (:) p (pRest p sep)
+pOneOrMoreWithSep p sep =
+  do r <- p
+     rs <- pRest p sep
+     return (r : rs)
 
 pRest :: Parser a -> Parser b -> Parser [a]
-pRest p sep = (pThen (\_ b -> b) sep (pOneOrMoreWithSep p sep)) `pAlt` (pEmpty [])
+pRest p sep = (sep >> pOneOrMoreWithSep p sep) `pAlt` (return [])
+
+pFail :: Parser a
+pFail = Parser (\_ -> [])
 
 pSat :: (String -> Bool) -> Parser String
-pSat p ((_, tok):toks)
-  | p tok = [(tok, toks)]
-  | otherwise = []
-pSat _ [] = []
+pSat p = Parser (\toks -> case toks of
+                           [] -> []
+                           (_, tok):toks' -> if p tok then [(tok, toks')] else [])
 
 pLit :: String -> Parser String
 pLit s = pSat (== s)
@@ -241,59 +261,10 @@ keywords :: [String]
 keywords = ["let", "letrec", "case", "in", "of", "Pack"]
 
 pNum :: Parser Int
-pNum = pApply (pSat $ and . map isDigit) read
-
-pThen4 :: (a -> b -> c -> d -> e)
-       -> Parser a
-       -> Parser b
-       -> Parser c
-       -> Parser d
-       -> Parser e
-pThen4 f p1 p2 p3 p4 toks =
-  [(f r1 r2 r3 r4,toks4) | (r1,toks1) <- p1 toks
-                         , (r2,toks2) <- p2 toks1
-                         , (r3,toks3) <- p3 toks2
-                         , (r4,toks4) <- p4 toks3]
-
-pThen5 :: (a -> b -> c -> d -> e -> f)
-       -> Parser a
-       -> Parser b
-       -> Parser c
-       -> Parser d
-       -> Parser e
-       -> Parser f
-pThen5 f p1 p2 p3 p4 p5 toks =
-  [(f r1 r2 r3 r4 r5,toks5) | (r1,toks1) <- p1 toks
-                            , (r2,toks2) <- p2 toks1
-                            , (r3,toks3) <- p3 toks2
-                            , (r4,toks4) <- p4 toks3
-                            , (r5,toks5) <- p5 toks4]
-
-pThen3 :: (a -> b -> c -> d) -> Parser a -> Parser b -> Parser c -> Parser d
-pThen3 f p1 p2 p3 toks =
-  [(f r1 r2 r3,toks3) | (r1,toks1) <- p1 toks
-                      , (r2,toks2) <- p2 toks1
-                      , (r3,toks3) <- p3 toks2]
-
-pThen6 :: (a -> b -> c -> d -> e -> f -> g)
-       -> Parser a
-       -> Parser b
-       -> Parser c
-       -> Parser d
-       -> Parser e
-       -> Parser f
-       -> Parser g
-pThen6 f p1 p2 p3 p4 p5 p6 toks =
-  [(f r1 r2 r3 r4 r5 r6,toks6) | (r1,toks1) <- p1 toks
-                               , (r2,toks2) <- p2 toks1
-                               , (r3,toks3) <- p3 toks2
-                               , (r4,toks4) <- p4 toks3
-                               , (r5,toks5) <- p5 toks4
-                               , (r6,toks6) <- p6 toks5]
-
+pNum = liftM read (pSat $ and . map isDigit)
 
 syntax :: [Token] -> CoreProgram
-syntax = take_first_parse . pProgram
+syntax = take_first_parse . runParser pProgram
   where take_first_parse ((prog,[]):others) = prog
         take_first_parse (p:others) = take_first_parse others
         take_first_parse _ = error "Syntex error"
@@ -302,16 +273,18 @@ pProgram :: Parser CoreProgram
 pProgram = pOneOrMoreWithSep pSc (pLit ";")
 
 pSc :: Parser CoreScDefn
-pSc = pThen4 mk_sc pVar (pZeroOrMore pVar) (pLit "=") pExpr
-
-mk_sc :: String -> [String] -> String -> CoreExpr -> (String, [String], CoreExpr)
-mk_sc a b c d = (a, b, d)
+pSc =
+  do var <- pVar
+     args <- pZeroOrMore pVar
+     pLit "="
+     expr <- pExpr
+     return (var,args,expr)
 
 pExpr :: Parser CoreExpr
 pExpr = pLet `pAlt` pLetRec `pAlt` pCase `pAlt` pLambda `pAlt` pExpr1
 
 pApp :: Parser CoreExpr
-pApp = pApply (pOneOrMore pAExpr) make_ap_chain
+pApp = liftM  make_ap_chain (pOneOrMore pAExpr)
 
 make_ap_chain :: [CoreExpr] -> CoreExpr
 make_ap_chain [x] = x
@@ -319,83 +292,184 @@ make_ap_chain [x,y] = EAp x y
 make_ap_chain (x:y:xs) = EAp (EAp x y) (make_ap_chain xs)
 
 pLet :: Parser CoreExpr
-pLet = pThen4 makeLet (pLit "let") pDefns (pLit "in") pExpr
-  where makeLet a b c d = ELet nonRecursive b d
+pLet =
+  do pLit "let"
+     defns <- pDefns
+     pLit "in"
+     expr <- pExpr
+     return (ELet nonRecursive defns expr)
 
 pDefns :: Parser [(Name, CoreExpr)]
 pDefns = pOneOrMoreWithSep pDefn (pLit ";")
 
 pDefn :: Parser (Name, CoreExpr)
-pDefn = pThen3 makeDefn pVar (pLit "=") pExpr
-  where makeDefn a b c = (a, c)
+pDefn =
+  do var <- pVar
+     pLit "="
+     expr <- pExpr
+     return (var,expr)
 
 pLetRec :: Parser CoreExpr
-pLetRec = pThen4 makeLetRec (pLit "letrec") pDefns (pLit "in") pExpr
-  where makeLetRec a b c d = ELet recursive b d
+pLetRec =
+  do pLit "letrec"
+     defns <- pDefns
+     pLit "in"
+     expr <- pExpr
+     return (ELet recursive defns expr)
 
 pCase :: Parser CoreExpr
-pCase = pThen4 makeCase (pLit "case") pExpr (pLit "of") pAlters
-  where makeCase a b c d = ECase b d
+pCase =
+  do pLit "case"
+     expr <- pExpr
+     pLit "of"
+     alters <- pAlters
+     return (ECase expr alters)
 
 pAlters :: Parser [CoreAlt]
 pAlters = pOneOrMoreWithSep pAlter (pLit ";")
 
 pAlter :: Parser CoreAlt
-pAlter = pThen6 makeAlter (pLit "<") pNum (pLit ">") (pOneOrMore pVar) (pLit "->") pExpr
-  where makeAlter a b c d e f = (b, d, f)
+pAlter =
+  do pLit "<"
+     num <- pNum
+     pLit ">"
+     vars <- pOneOrMore pVar
+     pLit "->"
+     expr <- pExpr
+     return (num,vars,expr)
 
 pLambda :: Parser CoreExpr
-pLambda = pThen4 makeLambda (pLit "\\") (pOneOrMore pVar) (pLit ".") pExpr
-  where makeLambda a b c d = ELam b d
+
+pLambda =
+  do pLit "\\"
+     vars <- pOneOrMore pVar
+     pLit "."
+     expr <- pExpr
+     return (ELam vars expr)
 
 pAExpr :: Parser CoreExpr
-pAExpr = (pApply pVar (EVar)) `pAlt` (pApply pNum ENum) `pAlt` pPack `pAlt` (pThen3 (\a b c -> b) (pLit "(") pExpr (pLit ")"))
+pAExpr =
+  (liftM EVar pVar) `pAlt`
+  (liftM ENum pNum) `pAlt`
+  pPack `pAlt`
+  (do pLit "("
+      expr <- pExpr
+      pLit ")"
+      return expr)
 
 pPack :: Parser CoreExpr
-pPack = pThen6 makePack (pLit "Pack") (pLit "{")  pNum (pLit ",") pNum (pLit "}")
-  where makePack a b c d e f = EConstr c e
+pPack =
+  do pLit "Pack"
+     pLit "{"
+     num1 <- pNum
+     pLit ","
+     num2 <- pNum
+     pLit "}"
+     return (EConstr num1 num2)
 
 data PartialExpr = NoOp | FoundOp Name CoreExpr
 
-pExpr1c :: Parser PartialExpr
-pExpr1c = (pThen FoundOp (pLit "|") pExpr1) `pAlt` (pEmpty NoOp)
-
 pExpr1 :: Parser CoreExpr
-pExpr1 = pThen assembleOp pExpr2 pExpr1c
+pExpr1 =
+  do expr <- pExpr2
+     expr' <- pExpr1c
+     return (assembleOp expr expr')
+
+pExpr1c :: Parser PartialExpr
+pExpr1c =
+  (do op <- pLit "|"
+      expr <- pExpr1
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
+
+-- pExpr1c = (pThen FoundOp (pLit "|") pExpr1) `pAlt` (pEmpty NoOp)
 
 assembleOp :: CoreExpr -> PartialExpr -> CoreExpr
 assembleOp e1 NoOp = e1
 assembleOp e1 (FoundOp op e2) = EAp (EAp (EVar op) e1) e2
 
 pExpr2 :: Parser CoreExpr
-pExpr2 = pThen assembleOp pExpr3 pExpr2c
+pExpr2 =
+  do expr <- pExpr3
+     expr' <- pExpr2c
+     return (assembleOp expr expr')
 
 pExpr2c :: Parser PartialExpr
-pExpr2c = (pThen FoundOp (pLit "&") pExpr2) `pAlt` (pEmpty NoOp)
+pExpr2c =
+  (do op <- pLit "&"
+      expr <- pExpr1
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
+-- pExpr2c = (pThen FoundOp (pLit "&") pExpr2) `pAlt` (pEmpty NoOp)
 
 pExpr3 :: Parser CoreExpr
-pExpr3 = pThen assembleOp pExpr4 pExpr3c
+pExpr3 =
+  do expr <- pExpr4
+     expr' <- pExpr3c
+     return (assembleOp expr expr')
+-- pExpr3 = pThen assembleOp pExpr4 pExpr3c
 
 pExpr3c :: Parser PartialExpr
-pExpr3c = (pThen FoundOp prelop pExpr4) `pAlt` (pEmpty NoOp)
+pExpr3c =
+  (do op <- prelop
+      expr <- pExpr4
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
+-- pExpr3c = (pThen FoundOp prelop pExpr4) `pAlt` (pEmpty NoOp)
 
 prelop :: Parser String
-prelop = (pLit "<") `pAlt` (pLit "<=") `pAlt` (pLit "==") `pAlt` (pLit "~=") `pAlt` (pLit ">=") `pAlt` (pLit ">")
+prelop =
+  (pLit "<") `pAlt`
+  (pLit "<=") `pAlt`
+  (pLit "==") `pAlt`
+  (pLit "~=") `pAlt`
+  (pLit ">=") `pAlt`
+  (pLit ">")
 
 pExpr4 :: Parser CoreExpr
-pExpr4 = pThen assembleOp pExpr5 (pExpr4c `pAlt` pExpr4c')
+pExpr4 =
+  do expr <- pExpr5
+     expr' <- pExpr4c `pAlt` pExpr4c'
+     return (assembleOp expr expr')
+-- pExpr4 = pThen assembleOp pExpr5 (pExpr4c `pAlt` pExpr4c')
 
 pExpr4c :: Parser PartialExpr
-pExpr4c = (pThen FoundOp (pLit "+") pExpr4) `pAlt` (pEmpty NoOp)
+pExpr4c =
+  (do op <- pLit "+"
+      expr <- pExpr4
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
+-- pExpr4c = (pThen FoundOp (pLit "+") pExpr4) `pAlt` (pEmpty NoOp)
 
 pExpr4c' :: Parser PartialExpr
-pExpr4c' = (pThen FoundOp (pLit "-") pExpr5) `pAlt` (pEmpty NoOp)
+pExpr4c' =
+  (do op <- pLit "-"
+      expr <- pExpr5
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
+-- pExpr4c' = (pThen FoundOp (pLit "-") pExpr5) `pAlt` (pEmpty NoOp)
 
 pExpr5 :: Parser CoreExpr
-pExpr5 = pThen assembleOp pApp pExpr5c
+pExpr5 =
+  do expr <- pApp
+     expr' <- pExpr5c `pAlt` pExpr5c'
+     return (assembleOp expr expr')
+-- pExpr5 = pThen assembleOp pApp pExpr5c
 
 pExpr5c :: Parser PartialExpr
-pExpr5c = (pThen FoundOp ((pLit "*") `pAlt` (pLit "/")) pExpr5) `pAlt` (pEmpty NoOp)
+pExpr5c =
+  (do op <- pLit "*"
+      expr <- pExpr5
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
+-- pExpr5c = (pThen FoundOp ((pLit "*") `pAlt` (pLit "/")) pExpr5) `pAlt` (pEmpty NoOp)
+
+pExpr5c' :: Parser PartialExpr
+pExpr5c' =
+  (do op <- pLit "/"
+      expr <- pApp
+      return (FoundOp op expr)) `pAlt`
+  (return NoOp)
 
 parse :: String -> CoreProgram
 parse = syntax . clex 1
