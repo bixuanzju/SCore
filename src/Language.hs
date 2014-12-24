@@ -5,6 +5,8 @@ import Data.Char (isDigit)
 import Data.Char (isLetter)
 import Data.Char (isSpace)
 import Control.Monad (liftM)
+import Control.Applicative
+import Control.Monad (ap)
 
 data Expr a
   = EVar Name
@@ -196,6 +198,12 @@ instance Monad Parser where
               [(r2,toks2) | (r1,toks1) <- runParser p toks
                           , (r2,toks2) <- runParser (f r1) toks1])
 
+instance Applicative Parser where
+  pure a = return a
+  (<*>) = ap
+
+instance Functor Parser where
+  fmap = liftM
 
 pAlt :: Parser a -> Parser a -> Parser a
 pAlt p1 p2 =
