@@ -5,19 +5,21 @@ import Data.Char (isDigit)
 import Data.Char (isLetter)
 import Data.Char (isSpace)
 
-data Expr a = EVar Name
-            | ENum Int
-            | EConstr Int Int
-            | EAp (Expr a) (Expr a)
-            | ELet
-                 IsRec
-                 [(a, Expr a)]
-                 (Expr a)
-            | ECase
-                  (Expr a)
-                  [Alter a]
-            | ELam [a] (Expr a)
-            deriving Show
+data Expr a
+  = EVar Name
+  | ENum Int
+  | EConstr Int
+            Int
+  | EAp (Expr a)
+        (Expr a)
+  | ELet IsRec
+         [(a,Expr a)]
+         (Expr a)
+  | ECase (Expr a)
+          [Alter a]
+  | ELam [a]
+         (Expr a)
+  deriving (Show)
 
 type CoreExpr = Expr Name
 type Name = String
@@ -28,10 +30,10 @@ recursive = True
 nonRecursive = False
 
 binderOf :: [(a, b)] -> [a]
-binderOf defns = [name | (name, rhs) <- defns]
+binderOf defns = [name | (name,rhs) <- defns]
 
 rhssOf :: [(a, b)] -> [b]
-rhssOf defns = [rhs | (name, rhs) <- defns]
+rhssOf defns = [rhs | (name,rhs) <- defns]
 
 type Alter a = (Int, [a], Expr a)
 type CoreAlt = Alter Name
@@ -48,25 +50,35 @@ type ScDefn a = (Name, [a], Expr a)
 type CoreScDefn = ScDefn Name
 
 preludeDefs :: CoreProgram
-preludeDefs = [ ("I", ["x"], EVar "x"),
-                ("K", ["x", "y"], EVar "x"),
-                ("K1", ["x", "y"], EVar "y"),
-                ("S", ["f", "g", "x"], EAp (EAp (EVar "f") (EVar "x"))
-                                       (EAp (EVar "g") (EVar "x"))),
-                ("compose", ["f", "g", "x"], EAp (EVar "f")
-                                             (EAp (EVar "g") (EVar "x"))),
-                ("twice", ["f"], EAp (EAp (EVar "compose") (EVar "f")) (EVar "f"))]
+preludeDefs =
+  [("I",["x"],EVar "x")
+  ,("K",["x","y"],EVar "x")
+  ,("K1",["x","y"],EVar "y")
+  ,("S"
+   ,["f","g","x"]
+   ,EAp (EAp (EVar "f")
+             (EVar "x"))
+        (EAp (EVar "g")
+             (EVar "x")))
+  ,("compose"
+   ,["f","g","x"]
+   ,EAp (EVar "f")
+        (EAp (EVar "g")
+             (EVar "x")))
+  ,("twice"
+   ,["f"]
+   ,EAp (EAp (EVar "compose")
+             (EVar "f"))
+        (EVar "f"))]
 
-aExpr :: CoreExpr
-aExpr = ELet True [("twice_x",EAp (EAp (EVar "+") (EVar "x")) (EVar "x")),("three",EAp (EAp (EVar "+") (EVar "twice_x")) (EVar "x"))] (EAp (EAp (EVar "+") (EVar "twice_x")) (EVar "twice_x"))
-
-
-data Iseq = INil
-          | IStr String
-          | IAppend Iseq Iseq
-          | IIndent Iseq
-          | INewline
-          deriving Show
+data Iseq
+  = INil
+  | IStr String
+  | IAppend Iseq
+            Iseq
+  | IIndent Iseq
+  | INewline
+  deriving (Show)
 
 iNil :: Iseq
 iNil = INil
@@ -112,9 +124,13 @@ pprExpr (ENum n) = iStr (show n)
 pprExpr (EVar v) = iStr v
 pprExpr (EAp e1 e2) = (pprExpr e1) `iAppend` (iStr " ") `iAppend` (pprExpr e2)
 pprExpr (ELet isrec defns expr) =
-  iConcat [ iStr keyword, iNewline,
-            iStr "  ", iIndent (pprDefns defns), iNewline,
-            iStr "in ", pprExpr expr ]
+  iConcat [iStr keyword
+          ,iNewline
+          ,iStr "  "
+          ,iIndent (pprDefns defns)
+          ,iNewline
+          ,iStr "in "
+          ,pprExpr expr]
   where keyword
           | not isrec = "let"
           | isrec = "letrec"
@@ -172,8 +188,9 @@ pAlt :: Parser a -> Parser a -> Parser a
 pAlt p1 p2 toks = (p1 toks) ++ (p2 toks)
 
 pThen :: (a -> b -> c) -> Parser a -> Parser b -> Parser c
-pThen combine p1 p2 toks = [ (combine v1 v2, toks2) | (v1, toks1) <- p1 toks,
-                                                      (v2, toks2) <- p2 toks1]
+pThen combine p1 p2 toks =
+  [(combine v1 v2,toks2) | (v1,toks1) <- p1 toks
+                         , (v2,toks2) <- p2 toks1]
 
 pGreeting :: Parser (String, String)
 pGreeting = pThen const (pThen (,) pHelloOrGoodbye pVar) (pLit "!")
@@ -185,8 +202,10 @@ pZeroOrMore :: Parser a -> Parser [a]
 pZeroOrMore p = (pOneOrMore p) `pAlt` (pEmpty [])
 
 pOneOrMore :: Parser a -> Parser [a]
-pOneOrMore p toks = [ (r:rs, toks2) | (r, toks1) <- p toks,
-                                      (rs, toks2) <- [head $ pZeroOrMore p toks1]]
+pOneOrMore p toks =
+  [(r : rs,toks2) | (r,toks1) <- p toks
+                  , (rs,toks2) <- [head $
+                                   pZeroOrMore p toks1]]
 
 pEmpty :: a -> Parser a
 pEmpty v toks = [(v, toks)]
@@ -224,37 +243,59 @@ keywords = ["let", "letrec", "case", "in", "of", "Pack"]
 pNum :: Parser Int
 pNum = pApply (pSat $ and . map isDigit) read
 
-pThen4 :: (a -> b -> c -> d -> e) -> Parser a -> Parser b -> Parser c -> Parser d -> Parser e
-pThen4 f p1 p2 p3 p4 toks = [ (f r1 r2 r3 r4, toks4) | (r1, toks1) <- p1 toks,
-                                                       (r2, toks2) <- p2 toks1,
-                                                       (r3, toks3) <- p3 toks2,
-                                                       (r4, toks4) <- p4 toks3]
+pThen4 :: (a -> b -> c -> d -> e)
+       -> Parser a
+       -> Parser b
+       -> Parser c
+       -> Parser d
+       -> Parser e
+pThen4 f p1 p2 p3 p4 toks =
+  [(f r1 r2 r3 r4,toks4) | (r1,toks1) <- p1 toks
+                         , (r2,toks2) <- p2 toks1
+                         , (r3,toks3) <- p3 toks2
+                         , (r4,toks4) <- p4 toks3]
 
-pThen5 :: (a -> b -> c -> d -> e -> f) -> Parser a -> Parser b -> Parser c -> Parser d -> Parser e -> Parser f
-pThen5 f p1 p2 p3 p4 p5 toks = [ (f r1 r2 r3 r4 r5, toks5) | (r1, toks1) <- p1 toks,
-                                                             (r2, toks2) <- p2 toks1,
-                                                             (r3, toks3) <- p3 toks2,
-                                                             (r4, toks4) <- p4 toks3,
-                                                             (r5, toks5) <- p5 toks4]
+pThen5 :: (a -> b -> c -> d -> e -> f)
+       -> Parser a
+       -> Parser b
+       -> Parser c
+       -> Parser d
+       -> Parser e
+       -> Parser f
+pThen5 f p1 p2 p3 p4 p5 toks =
+  [(f r1 r2 r3 r4 r5,toks5) | (r1,toks1) <- p1 toks
+                            , (r2,toks2) <- p2 toks1
+                            , (r3,toks3) <- p3 toks2
+                            , (r4,toks4) <- p4 toks3
+                            , (r5,toks5) <- p5 toks4]
 
 pThen3 :: (a -> b -> c -> d) -> Parser a -> Parser b -> Parser c -> Parser d
-pThen3 f p1 p2 p3 toks = [ (f r1 r2 r3, toks3) | (r1, toks1) <- p1 toks,
-                                                 (r2, toks2) <- p2 toks1,
-                                                 (r3, toks3) <- p3 toks2]
+pThen3 f p1 p2 p3 toks =
+  [(f r1 r2 r3,toks3) | (r1,toks1) <- p1 toks
+                      , (r2,toks2) <- p2 toks1
+                      , (r3,toks3) <- p3 toks2]
 
-pThen6 :: (a -> b -> c -> d -> e -> f -> g) -> Parser a -> Parser b -> Parser c -> Parser d -> Parser e -> Parser f -> Parser g
-pThen6 f p1 p2 p3 p4 p5 p6 toks = [ (f r1 r2 r3 r4 r5 r6, toks6) | (r1, toks1) <- p1 toks,
-                                                                   (r2, toks2) <- p2 toks1,
-                                                                   (r3, toks3) <- p3 toks2,
-                                                                   (r4, toks4) <- p4 toks3,
-                                                                   (r5, toks5) <- p5 toks4,
-                                                                   (r6, toks6) <- p6 toks5]
+pThen6 :: (a -> b -> c -> d -> e -> f -> g)
+       -> Parser a
+       -> Parser b
+       -> Parser c
+       -> Parser d
+       -> Parser e
+       -> Parser f
+       -> Parser g
+pThen6 f p1 p2 p3 p4 p5 p6 toks =
+  [(f r1 r2 r3 r4 r5 r6,toks6) | (r1,toks1) <- p1 toks
+                               , (r2,toks2) <- p2 toks1
+                               , (r3,toks3) <- p3 toks2
+                               , (r4,toks4) <- p4 toks3
+                               , (r5,toks5) <- p5 toks4
+                               , (r6,toks6) <- p6 toks5]
 
 
 syntax :: [Token] -> CoreProgram
 syntax = take_first_parse . pProgram
-  where take_first_parse ((prog, []):others) = prog
-        take_first_parse (p : others) = take_first_parse others
+  where take_first_parse ((prog,[]):others) = prog
+        take_first_parse (p:others) = take_first_parse others
         take_first_parse _ = error "Syntex error"
 
 pProgram :: Parser CoreProgram
