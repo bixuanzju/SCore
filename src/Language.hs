@@ -1,12 +1,8 @@
 module Language where
 
-import Data.Char (isAlpha)
-import Data.Char (isDigit)
-import Data.Char (isLetter)
-import Data.Char (isSpace)
-import Control.Monad (liftM)
 import Control.Applicative
-import Control.Monad (ap)
+import Control.Monad (liftM, ap)
+import Data.Char (isAlpha, isDigit, isLetter, isSpace)
 
 data Expr a
   = EVar Name
