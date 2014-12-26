@@ -390,7 +390,6 @@ pExpr1c =
       return (FoundOp op expr)) `pAlt`
   (return NoOp)
 
--- pExpr1c = (pThen FoundOp (pLit "|") pExpr1) `pAlt` (pEmpty NoOp)
 
 assembleOp :: CoreExpr -> PartialExpr -> CoreExpr
 assembleOp e1 NoOp = e1
@@ -408,14 +407,12 @@ pExpr2c =
       expr <- pExpr1
       return (FoundOp op expr)) `pAlt`
   (return NoOp)
--- pExpr2c = (pThen FoundOp (pLit "&") pExpr2) `pAlt` (pEmpty NoOp)
 
 pExpr3 :: Parser CoreExpr
 pExpr3 =
   do expr <- pExpr4
      expr' <- pExpr3c
      return (assembleOp expr expr')
--- pExpr3 = pThen assembleOp pExpr4 pExpr3c
 
 pExpr3c :: Parser PartialExpr
 pExpr3c =
@@ -423,7 +420,6 @@ pExpr3c =
       expr <- pExpr4
       return (FoundOp op expr)) `pAlt`
   (return NoOp)
--- pExpr3c = (pThen FoundOp prelop pExpr4) `pAlt` (pEmpty NoOp)
 
 prelop :: Parser String
 prelop =
@@ -439,7 +435,6 @@ pExpr4 =
   do expr <- pExpr5
      expr' <- pExpr4c `pAlt` pExpr4c'
      return (assembleOp expr expr')
--- pExpr4 = pThen assembleOp pExpr5 (pExpr4c `pAlt` pExpr4c')
 
 pExpr4c :: Parser PartialExpr
 pExpr4c =
@@ -447,7 +442,6 @@ pExpr4c =
       expr <- pExpr4
       return (FoundOp op expr)) `pAlt`
   (return NoOp)
--- pExpr4c = (pThen FoundOp (pLit "+") pExpr4) `pAlt` (pEmpty NoOp)
 
 pExpr4c' :: Parser PartialExpr
 pExpr4c' =
@@ -455,14 +449,12 @@ pExpr4c' =
       expr <- pExpr5
       return (FoundOp op expr)) `pAlt`
   (return NoOp)
--- pExpr4c' = (pThen FoundOp (pLit "-") pExpr5) `pAlt` (pEmpty NoOp)
 
 pExpr5 :: Parser CoreExpr
 pExpr5 =
   do expr <- pApp
      expr' <- pExpr5c `pAlt` pExpr5c'
      return (assembleOp expr expr')
--- pExpr5 = pThen assembleOp pApp pExpr5c
 
 pExpr5c :: Parser PartialExpr
 pExpr5c =
@@ -470,7 +462,6 @@ pExpr5c =
       expr <- pExpr5
       return (FoundOp op expr)) `pAlt`
   (return NoOp)
--- pExpr5c = (pThen FoundOp ((pLit "*") `pAlt` (pLit "/")) pExpr5) `pAlt` (pEmpty NoOp)
 
 pExpr5c' :: Parser PartialExpr
 pExpr5c' =
