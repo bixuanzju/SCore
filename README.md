@@ -2,6 +2,10 @@
 
 ## Summary
 
+A simple non-strict functional language implementation following by
+this
+[book](http://research.microsoft.com/en-us/um/people/simonpj/Papers/pj-lester-book/).
+
 ## Contributing
 
 Yes, please do! See [CONTRIBUTING][] for guidelines.
