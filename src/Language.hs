@@ -118,6 +118,17 @@ iInterleave _ [] = iNil
 iInterleave _ [y] = y
 iInterleave x (y:ys) = y `iAppend` x `iAppend` (iInterleave x ys)
 
+iNum :: Int -> Iseq
+iNum n = iStr (show n)
+
+iFWNum :: Int -> Int -> Iseq
+iFWNum width n =
+  iStr (space (width - length digits) ++ digits)
+  where digits = show n
+
+iLayn :: [Iseq] -> Iseq
+iLayn seqs = iConcat (map lay_item (zip [1..] seqs))
+  where lay_item (n, seq) = iConcat [ iFWNum 4 n, iStr ") ", iIndent seq, iNewline ]
 
 pprExpr :: CoreExpr -> Iseq
 pprExpr (ENum n) = iStr (show n)
@@ -291,9 +302,12 @@ pApp :: Parser CoreExpr
 pApp = liftM  make_ap_chain (pOneOrMore pAExpr)
 
 make_ap_chain :: [CoreExpr] -> CoreExpr
-make_ap_chain [x] = x
-make_ap_chain [x,y] = EAp x y
-make_ap_chain (x:y:xs) = EAp (EAp x y) (make_ap_chain xs)
+make_ap_chain xs = foldl1 make_ap xs
+  where make_ap l r = EAp l r
+
+-- make_ap_chain [x] = x
+-- make_ap_chain [x,y] = EAp x y
+-- make_ap_chain (x:y:xs) = EAp (EAp x y) (make_ap_chain xs)
 
 pLet :: Parser CoreExpr
 pLet =
