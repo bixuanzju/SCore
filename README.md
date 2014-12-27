@@ -2,8 +2,7 @@
 
 ## Summary
 
-A simple non-strict functional language implementation following by
-this
+A simple non-strict functional language implementation following this
 [book](http://research.microsoft.com/en-us/um/people/simonpj/Papers/pj-lester-book/).
 
 ## Contributing
