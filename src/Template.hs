@@ -45,12 +45,6 @@ allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
   where (h, addr) = hAlloc heap (NSupercomb name args body)
 
-mapAccuml :: (a -> b -> (a, c)) -> a -> [b] -> (a, [c])
-mapAccuml _ acc [] = (acc, [])
-mapAccuml f acc (x:xs) = (acc2,x' : xs')
-  where (acc1,x') = f acc x
-        (acc2,xs') = mapAccuml f acc1 xs
-
 eval :: TiState -> [TiState]
 eval state = state : rest_states
   where rest_states | tiFinal state = []
@@ -86,15 +80,20 @@ apStep (stack, dump, heap, globals, stats) a1 a2 =
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
   (new_stack, dump, new_heap, globals, stats)
-  where new_stack = result_addr : (drop (length arg_names + 1) stack)
+  where new_stack = result_addr : checkStack
         (new_heap, result_addr) = instantiate body heap env
         env = arg_bindings ++ globals
         arg_bindings = zip arg_names (getargs heap (tail stack))
+        checkStack = if (length arg_names) >= (length stack)
+                     then error (sc_name ++ " applied to too few arguments")
+                     else (drop (length arg_names + 1) stack)
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap stack = map get_arg stack
-  where get_arg addr = arg
-          where (NAp fun arg) = hLookup heap addr
+  where get_arg addr =
+          let (NAp fun arg) = hLookup heap addr
+          in arg
+
 
 instantiate :: CoreExpr -> TiHeap -> ASSOC Name Addr -> (TiHeap, Addr)
 instantiate (ENum n) heap env = hAlloc heap (NNum n)
@@ -110,19 +109,34 @@ instantiateConstr tag arity heap env = error "Can't instantiate constructors yet
 instantiateLet isrec defs body heap env = error "Can't instantiate let(rec)s yet"
 
 showResults :: [TiState] -> String
-showResults states = iDisplay (iConcat [ iLayn (map showState states),
-                               showStats (last states)])
+showResults states =
+  iDisplay $
+  iConcat [iLayn (map showState states),showStats (last states)]
 
 showState :: TiState -> Iseq
-showState (stack, dump, heap, globals, stats) = iConcat [ showStack heap stack, iNewline ]
+showState (stack,dump,heap,globals,stats) =
+  iConcat [showStack heap stack,iNewline,showHeap heap,iNewline]
+
+showHeap :: TiHeap -> Iseq
+showHeap heap =
+  iConcat [iStr "Hep ["
+          ,iIndent (iInterleave iNewline
+                                (map show_heap_item (hAddresses heap)))
+          ,iStr " ]"]
+  where show_heap_item addr =
+          iConcat [showFWAddr addr,iStr ": ",showNode (hLookup heap addr)]
 
 showStack :: TiHeap -> TiStack -> Iseq
 showStack heap stack =
-  iConcat [ iStr "Stk [",
-            iIndent (iInterleave iNewline (map show_stack_item stack)),
-            iStr " ]"]
-  where show_stack_item addr = iConcat [ showFWAddr addr, iStr ": ",
-                                         showStkNode heap (hLookup heap addr)]
+  iConcat [iStr "Stk ["
+          ,iIndent (iInterleave iNewline
+                                (map show_stack_item stack))
+          ,iStr " ]"]
+  where show_stack_item addr =
+          iConcat [showFWAddr addr
+                  ,iStr ": "
+                  ,showStkNode heap
+                               (hLookup heap addr)]
 
 showStkNode :: TiHeap -> Node -> Iseq
 showStkNode heap (NAp fun arg) =
