@@ -27,6 +27,7 @@ import Utils
 runProg :: String -> String
 runProg = showResults . eval . compile . parse
 
+{- Compiler -}
 compile :: CoreProgram -> TiState
 compile program =
   (initialStack, initialTiDump, initialHeap, globals, tiStatInitial)
@@ -45,6 +46,7 @@ allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
   where (h, addr) = hAlloc heap (NSupercomb name args body)
 
+{- Evaluator -}
 eval :: TiState -> [TiState]
 eval state = state : rest_states
   where rest_states | tiFinal state = []
@@ -108,6 +110,7 @@ instantiate (ECase e alts) heap env = error "Can't instantiate case exprs"
 instantiateConstr tag arity heap env = error "Can't instantiate constructors yet"
 instantiateLet isrec defs body heap env = error "Can't instantiate let(rec)s yet"
 
+{- Printer -}
 showResults :: [TiState] -> String
 showResults states =
   iDisplay $
