@@ -39,14 +39,14 @@ extraPreludeDefs :: [CoreScDefn]
 extraPreludeDefs = []
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
-buildInitialHeap sc_defs = mapAccuml allocateSc hInitial sc_defs
+buildInitialHeap = mapAccuml allocateSc hInitial
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
   where (h, addr) = hAlloc heap (NSupercomb name args body)
 
 mapAccuml :: (a -> b -> (a, c)) -> a -> [b] -> (a, [c])
-mapAccuml f acc [] = (acc, [])
+mapAccuml _ acc [] = (acc, [])
 mapAccuml f acc (x:xs) = (acc2,x' : xs')
   where (acc1,x') = f acc x
         (acc2,xs') = mapAccuml f acc1 xs

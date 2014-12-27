@@ -1,8 +1,7 @@
 module Main where
 
-import Language
-import Template
-import Utils
+import Language (parse)
+import Template (compile, eval, runProg, showResults)
 
 main :: IO ()
 main = do contents <- readFile "test.txt"
