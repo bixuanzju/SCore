@@ -161,7 +161,7 @@ instantiateLetAndUpdate upd_addr isrec defs body heap env =
               let (h', addr) = instantiate expr h env
               in (h', (name, addr))
           | otherwise =
-              let (h', addr) = instantiate expr h env
+              let (h', addr) = instantiate expr h env'
               in (h', (name, addr))
         env' = bindings ++ env
 
