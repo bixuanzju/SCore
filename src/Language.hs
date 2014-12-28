@@ -103,7 +103,7 @@ flatten _ [] = ""
 flatten col ((INil, _):seqs) = flatten col seqs
 flatten col ((IStr s, _) : seqs) = s ++ flatten (col + length s) seqs
 flatten col ((IAppend seq1 seq2, n) : seqs) = flatten col ((seq1, n) : (seq2, n) : seqs)
-flatten col ((INewline, n) : seqs) = '\n' : (space n) ++ flatten n seqs
+flatten _ ((INewline, n) : seqs) = '\n' : (space n) ++ flatten n seqs
 flatten col ((IIndent s, _) : seqs) = flatten col ((s, col) : seqs)
 
 iDisplay :: Iseq -> String
