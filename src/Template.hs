@@ -108,7 +108,25 @@ instantiate (ELet isrec defs body) heap env = instantiateLet isrec defs body hea
 instantiate (ECase e alts) heap env = error "Can't instantiate case exprs"
 
 instantiateConstr tag arity heap env = error "Can't instantiate constructors yet"
-instantiateLet isrec defs body heap env = error "Can't instantiate let(rec)s yet"
+
+instantiateLet :: IsRec
+               -> [(Name,CoreExpr)]
+               -> CoreExpr
+               -> TiHeap
+               -> ASSOC Name Addr
+               -> (TiHeap,Addr)
+instantiateLet isrec defs body heap env =
+  instantiate body heap1 env'
+  where (heap1,bindings) =
+          mapAccuml ins_defs heap defs
+        ins_defs h (name,expr)
+          | isrec == nonRecursive =
+            let (h',addr) = instantiate expr h env
+            in (h',(name,addr))
+          | otherwise =
+            let (h',addr) = instantiate expr h env'
+            in (h',(name,addr))
+        env' = bindings ++ env
 
 {- Printer -}
 showResults :: [TiState] -> String
