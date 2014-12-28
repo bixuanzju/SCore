@@ -87,14 +87,14 @@ apStep (stack, dump, heap, globals, stats) a1 _ =
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
   (new_stack, dump, new_heap, globals, stats)
-  where new_stack = result_addr : checkStack
-        (heap1, result_addr) = instantiate body heap env
-        new_heap = hUpdate heap1 (stack !! (length arg_names)) (NInd result_addr)
+  where new_stack = checkStack
+        new_heap = instantiateAndUpdate body (stack !! (length arg_names)) heap env
+        -- new_heap = hUpdate heap1 (stack !! (length arg_names)) (NInd result_addr)
         env = arg_bindings ++ globals
         arg_bindings = zip arg_names (getargs heap (tail stack))
         checkStack = if (length arg_names) >= (length stack)
                      then error (sc_name ++ " applied to too few arguments")
-                     else (drop (length arg_names + 1) stack)
+                     else (drop (length arg_names) stack)
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap stack = map get_arg stack
@@ -132,6 +132,37 @@ instantiateLet isrec defs body heap env = instantiate body heap1 env'
           | otherwise =
             let (h',addr) = instantiate expr h env'
             in (h',(name,addr))
+        env' = bindings ++ env
+
+instantiateAndUpdate :: CoreExpr -> Addr -> TiHeap -> ASSOC Name Addr -> TiHeap
+instantiateAndUpdate (EAp e1 e2) upd_addr heap env =
+  hUpdate heap2 upd_addr (NAp a1 a2)
+  where (heap1, a1) = instantiate e1 heap env
+        (heap2, a2) = instantiate e2 heap1 env
+instantiateAndUpdate (EVar v) upd_addr heap env =
+  hUpdate heap upd_addr (NInd (aLookup env v (error ("Undefined name " ++ show v))))
+instantiateAndUpdate (ENum n) upd_addr heap _ =
+  hUpdate heap upd_addr (NNum n)
+instantiateAndUpdate (ELet isrec defs body) upd_addr heap env =
+  instantiateLetAndUpdate upd_addr isrec defs body heap env
+
+instantiateLetAndUpdate :: Addr
+                        -> IsRec
+                        -> [(Name,CoreExpr)]
+                        -> CoreExpr
+                        -> TiHeap
+                        -> ASSOC Name Addr
+                        -> TiHeap
+instantiateLetAndUpdate upd_addr isrec defs body heap env =
+  instantiateAndUpdate body upd_addr heap1 env'
+  where (heap1, bindings) = mapAccuml ins_defs heap defs
+        ins_defs h (name, expr)
+          | isrec == nonRecursive =
+              let (h', addr) = instantiate expr h env
+              in (h', (name, addr))
+          | otherwise =
+              let (h', addr) = instantiate expr h env
+              in (h', (name, addr))
         env' = bindings ++ env
 
 {- Printer -}
