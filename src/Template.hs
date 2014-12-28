@@ -218,9 +218,10 @@ showFWAddr addr = iStr (space (4 - length str) ++ str)
   where str = show addr
 
 showStats :: TiState -> Iseq
-showStats (_, _, _, _, stats) =
+showStats (_, _, heap, _, stats) =
   iConcat [ iNewline, iNewline, iStr "Total number of steps = ",
-            iNum (tiStatGetSteps stats)]
+            iNum (tiStatGetSteps stats), iNewline,
+            iStr "Heap size = ", iNum (hSize heap)]
 
 type TiState = (TiStack, TiDump, TiHeap, TiGlobals, TiStats)
 

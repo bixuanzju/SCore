@@ -29,6 +29,10 @@ hNull = 0
 hIsNull :: Addr -> Bool
 hIsNull = (== 0)
 
+hSize :: Heap a -> Int
+hSize (size, _, _) = size
+
+
 showaddr :: Addr -> String
 showaddr a = "#" ++ show a
 
