@@ -165,10 +165,6 @@ pprint :: CoreProgram -> String
 pprint p = iDisplay $  iInterleave s (map pprScDefn p)
   where s = iConcat [ iStr ";", iNewline]
 
-aProgram :: CoreProgram
-aProgram = [("main",[],EAp (EVar "quadr") (ENum 20)),("quadr",["x"],ELet False [("twice_x",EAp (EAp (EVar "+") (EVar "x")) (EVar "x")),("three",EAp (EAp (EVar "+") (EVar "twice_x")) (EVar "x"))] (EAp (EAp (EVar "+") (EVar "twice_x")) (EVar "twice_x")))]
-
-
 {- Lexer and Parser -}
 
 type Token = (Int, String)
@@ -233,9 +229,6 @@ pZeroOrMore :: Parser a -> Parser [a]
 pZeroOrMore p = (pOneOrMore p) `pAlt` (return [])
 
 pOneOrMore :: Parser a -> Parser [a]
--- pOneOrMore p = do r <- p
---                   rs <- pZeroOrMore p
---                   return (r:rs)
 pOneOrMore p =
   Parser (\toks ->
             [(r : rs,toks2) | (r,toks1) <- runParser p toks

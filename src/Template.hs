@@ -51,7 +51,7 @@ allocatePrim heap (name, prim) = (heap', (name, addr))
 
 primitives :: ASSOC Name Primitive
 primitives =
-  [("negate",Neg),("+",Add),("-",Sub),("*",Mul),("/",Div)]
+  [("negate",Neg),("+",Add),("-",Sub),("*",Mul),("/",Div),("if",If)]
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
@@ -84,6 +84,13 @@ step state@(stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
         dispatch (NSupercomb sc args body) = scStep state sc args body
         dispatch (NInd addr) = indStep state addr
         dispatch (NPrim _ prim) = primStep state prim
+        dispatch (NData _ _) = constrStep state
+
+constrStep :: TiState -> TiState
+constrStep (stack,dump,heap,globals,stats)
+  | length stack == 1 && (not . null $ dump) =
+      (head dump,tail dump,heap,globals,stats)
+  | otherwise = error "Impossible happened"
 
 primStep :: TiState -> Primitive -> TiState
 primStep state Neg = primNeg state
@@ -91,6 +98,50 @@ primStep state Add = primArith state (+)
 primStep state Sub = primArith state (-)
 primStep state Mul = primArith state (*)
 primStep state Div = primArith state (div)
+primStep state (PrimConstr tag arity) = primConstr state tag arity
+primStep state If = primIfexpr state
+
+isBooleanNode :: Node -> Bool
+isBooleanNode (NData _ []) = True
+isBooleanNode _ = False
+
+primIfexpr :: TiState -> TiState
+primIfexpr (stack,dump,heap,globals,stats) =
+  if isBooleanNode pred_node
+     then case pred_node of
+            NData 2 [] ->
+              (drop 3 stack
+              ,dump
+              ,hUpdate heap
+                       (stack !! 3)
+                       (NInd addr1)
+              ,globals
+              ,stats)
+            NData 1 [] ->
+              (drop 3 stack
+              ,dump
+              ,hUpdate heap
+                       (stack !! 3)
+                       (NInd addr2)
+              ,globals
+              ,stats)
+            _ -> error "Impossible happened"
+     else ([pred_addr]
+          ,[stack !! 3] :
+           dump
+          ,heap
+          ,globals
+          ,stats)
+  where [pred_addr,addr1,addr2] =
+          getArgs heap (tail stack)
+        pred_node = hLookup heap pred_addr
+
+
+
+primConstr :: TiState -> Int -> Int -> TiState
+primConstr (stack, dump, heap, globals, stats) tag arity =
+  (drop arity stack, dump, hUpdate heap (stack !! arity) (NData tag addrs), globals, stats)
+  where addrs = take arity $ getArgs heap (tail stack)
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith (stack, dump, heap, globals, stats) op =
@@ -158,9 +209,13 @@ instantiate (EVar v) heap env = (heap, aLookup env v (error ("Undefined name " +
 instantiate (EConstr tag arity) heap env = instantiateConstr tag arity heap env
 instantiate (ELet isrec defs body) heap env = instantiateLet isrec defs body heap env
 instantiate (ECase e alts) heap env = error "Can't instantiate case exprs"
+instantiate (ELam _ _) _ _ = error "Haven't implemented yet"
 
-
-instantiateConstr tag arity heap env = error "Can't instantiate constructors yet"
+instantiateConstr :: Int -> Int -> TiHeap -> ASSOC Name Addr -> (TiHeap, Addr)
+instantiateConstr tag arity heap _ =
+  if arity == 0 -- Need to apply it immediately
+  then hAlloc heap (NData tag [])
+  else hAlloc heap (NPrim "Pack" (PrimConstr tag arity))
 
 instantiateLet :: IsRec
                -> [(Name,CoreExpr)]
@@ -191,6 +246,9 @@ instantiateAndUpdate (ENum n) upd_addr heap _ =
   hUpdate heap upd_addr (NNum n)
 instantiateAndUpdate (ELet isrec defs body) upd_addr heap env =
   instantiateLetAndUpdate upd_addr isrec defs body heap env
+instantiateAndUpdate (ECase _ _) _ _ _ = error "Haven't implemented yet"
+instantiateAndUpdate (EConstr _ _) _ _ _ = error "Haven't implemented yet"
+instantiateAndUpdate (ELam _ _) _ _ _ = error "Haven't implemented yet"
 
 instantiateLetAndUpdate :: Addr
                         -> IsRec
@@ -256,6 +314,8 @@ showNode (NSupercomb name _ _) = iStr ("NSupercomb " ++ name)
 showNode (NNum n) = (iStr "NNum ") `iAppend` (iNum n)
 showNode (NInd addr) = (iStr "NInd ") `iAppend` (showAddr addr)
 showNode (NPrim name _) = iStr ("NPrim " ++ name)
+showNode (NData tag addrs) = iConcat [iStr ("NData <" ++ show tag ++ "> "),
+                                      iInterleave (iStr " ") (map showAddr addrs)]
 
 showAddr :: Addr -> Iseq
 showAddr addr = iStr (show addr)
@@ -286,8 +346,9 @@ data Node = NAp Addr Addr
           | NNum Int
           | NInd Addr
           | NPrim Name Primitive
+          | NData Int [Addr]
 
-data Primitive = Neg | Add | Sub | Mul | Div
+data Primitive = Neg | Add | Sub | Mul | Div | PrimConstr Int Int | If
 
 type TiGlobals = ASSOC Name Addr
 
