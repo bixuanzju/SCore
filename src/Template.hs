@@ -37,7 +37,35 @@ compile program =
         address_of_main = aLookup globals "main" (error "main is not defined")
 
 extraPreludeDefs :: [CoreScDefn]
-extraPreludeDefs = []
+extraPreludeDefs =
+  [("and"
+   ,["x","y"]
+   ,(EAp (EAp (EAp (EVar "if")
+                   (EVar "x"))
+              (EVar "y"))
+         (EConstr 1 0)))
+  ,("or"
+   ,["x","y"]
+   ,(EAp (EAp (EAp (EVar "if")
+                   (EVar "x"))
+              (EConstr 2 0))
+         (EVar "y")))
+  ,("not"
+   ,["x"]
+   ,(EAp (EAp (EAp (EVar "if")
+                   (EVar "x"))
+              (EConstr 1 0))
+         (EConstr 2 0)))
+  ,("xor"
+   ,["x","y"]
+   ,(EAp (EAp (EVar "and")
+              (EAp (EAp (EVar "or")
+                        (EVar "x"))
+                   (EVar "y")))
+         (EAp (EVar "not")
+              (EAp (EAp (EVar "and")
+                        (EVar "x"))
+                   (EVar "y")))))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
