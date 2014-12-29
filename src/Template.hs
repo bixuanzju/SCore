@@ -275,7 +275,9 @@ instantiateAndUpdate (ENum n) upd_addr heap _ =
 instantiateAndUpdate (ELet isrec defs body) upd_addr heap env =
   instantiateLetAndUpdate upd_addr isrec defs body heap env
 instantiateAndUpdate (ECase _ _) _ _ _ = error "Haven't implemented yet"
-instantiateAndUpdate (EConstr _ _) _ _ _ = error "Haven't implemented yet"
+instantiateAndUpdate e@(EConstr _ _) upd_addr heap env =
+  hUpdate heap' upd_addr (hLookup heap' addr)
+  where (heap', addr) = instantiate e heap env
 instantiateAndUpdate (ELam _ _) _ _ _ = error "Haven't implemented yet"
 
 instantiateLetAndUpdate :: Addr
