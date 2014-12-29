@@ -103,6 +103,7 @@ tiFinal _ = False
 
 isDataNode :: Node -> Bool
 isDataNode (NNum _) = True
+isDataNode (NData _ _) = True
 isDataNode _ = False
 
 step :: TiState -> TiState
@@ -112,10 +113,10 @@ step state@(stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
         dispatch (NSupercomb sc args body) = scStep state sc args body
         dispatch (NInd addr) = indStep state addr
         dispatch (NPrim _ prim) = primStep state prim
-        dispatch (NData _ _) = constrStep state
+        dispatch (NData _ _) = dataStep state
 
-constrStep :: TiState -> TiState
-constrStep (stack,dump,heap,globals,stats)
+dataStep :: TiState -> TiState
+dataStep (stack,dump,heap,globals,stats)
   | length stack == 1 && (not . null $ dump) =
       (head dump,tail dump,heap,globals,stats)
   | otherwise = error "Impossible happened"
@@ -127,15 +128,11 @@ primStep state Sub = primArith state (-)
 primStep state Mul = primArith state (*)
 primStep state Div = primArith state (div)
 primStep state (PrimConstr tag arity) = primConstr state tag arity
-primStep state If = primIfexpr state
+primStep state If = primIf state
 
-isBooleanNode :: Node -> Bool
-isBooleanNode (NData _ []) = True
-isBooleanNode _ = False
-
-primIfexpr :: TiState -> TiState
-primIfexpr (stack,dump,heap,globals,stats) =
-  if isBooleanNode pred_node
+primIf :: TiState -> TiState
+primIf (stack,dump,heap,globals,stats) =
+  if isDataNode pred_node
      then case pred_node of
             NData 2 [] ->
               (drop 3 stack
