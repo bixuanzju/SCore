@@ -51,7 +51,7 @@ eval :: TiState -> [TiState]
 eval state = state : rest_states
   where rest_states | tiFinal state = []
                     | otherwise = eval next_state
-        next_state = doAdmin (step state)
+        next_state = step state
 
 doAdmin :: TiState -> TiState
 doAdmin = applyToStats tiStatIncSteps
@@ -86,7 +86,7 @@ apStep (stack, dump, heap, globals, stats) a1 _ =
 
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
-  (new_stack, dump, new_heap, globals, stats)
+  (new_stack, dump, new_heap, globals, tiStatIncSteps stats)
   where new_stack = if (length arg_names) >= (length stack)
                     then error (sc_name ++ " applied to too few arguments")
                     else (drop (length arg_names) stack)
@@ -217,7 +217,7 @@ showFWAddr addr = iStr (space (4 - length str) ++ str)
 
 showStats :: TiState -> Iseq
 showStats (_, _, heap, _, stats) =
-  iConcat [ iNewline, iNewline, iStr "Total number of steps = ",
+  iConcat [ iNewline, iNewline, iStr "Total number of SC reductions = ",
             iNum (tiStatGetSteps stats), iNewline,
             iStr "Heap size = ", iNum (hSize heap)]
 
