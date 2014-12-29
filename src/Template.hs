@@ -87,7 +87,24 @@ step state@(stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
 
 primStep :: TiState -> Primitive -> TiState
 primStep state Neg = primNeg state
-primStep _ _ = error "Haven't implemented yet"
+primStep state Add = primArith state (+)
+primStep state Sub = primArith state (-)
+primStep state Mul = primArith state (*)
+primStep state Div = primArith state (div)
+
+primArith :: TiState -> (Int -> Int -> Int) -> TiState
+primArith (stack, dump, heap, globals, stats) op =
+  if isDataNode arg1_node && isDataNode arg2_node
+  then let (NNum a) = arg1_node
+           (NNum b) = arg2_node
+           heap' = hUpdate heap (stack !! 2) (NNum (op a b))
+       in (drop 2 stack, dump, heap', globals, stats)
+  else if isDataNode arg1_node
+       then ([arg2_addr], [stack !! 2] : dump, heap, globals, stats)
+       else ([arg1_addr], [stack !! 2] : dump, heap, globals, stats)
+  where ([arg1_addr, arg2_addr]) = getArgs heap (tail stack)
+        arg1_node = hLookup heap arg1_addr
+        arg2_node = hLookup heap arg2_addr
 
 primNeg :: TiState -> TiState
 primNeg (stack, dump, heap, globals, stats) =
