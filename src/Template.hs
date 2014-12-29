@@ -87,14 +87,12 @@ apStep (stack, dump, heap, globals, stats) a1 _ =
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
   (new_stack, dump, new_heap, globals, stats)
-  where new_stack = checkStack
+  where new_stack = if (length arg_names) >= (length stack)
+                    then error (sc_name ++ " applied to too few arguments")
+                    else (drop (length arg_names) stack)
         new_heap = instantiateAndUpdate body (stack !! (length arg_names)) heap env
-        -- new_heap = hUpdate heap1 (stack !! (length arg_names)) (NInd result_addr)
         env = arg_bindings ++ globals
         arg_bindings = zip arg_names (getargs heap (tail stack))
-        checkStack = if (length arg_names) >= (length stack)
-                     then error (sc_name ++ " applied to too few arguments")
-                     else (drop (length arg_names) stack)
 
 getargs :: TiHeap -> TiStack -> [Addr]
 getargs heap stack = map get_arg stack
