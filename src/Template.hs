@@ -81,7 +81,18 @@ allocatePrim heap (name, prim) = (heap', (name, addr))
 
 primitives :: ASSOC Name Primitive
 primitives =
-  [("negate",Neg),("+",Add),("-",Sub),("*",Mul),("/",Div),("if",If)]
+  [("negate",Neg)
+  ,("+",Add)
+  ,("-",Sub)
+  ,("*",Mul)
+  ,("/",Div)
+  ,("if",If)
+  ,(">",Greater)
+  ,(">=",GreaterEq)
+  ,("<", Less)
+  ,("<=", LessEq)
+  ,("==", Eq)
+  ,("~=", NotEq)]
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
@@ -138,11 +149,46 @@ primStep state LessEq = primDyadic state (nodify (<=))
 primStep state Eq = primDyadic state (nodify (==))
 primStep state NotEq = primDyadic state (nodify (/=))
 
+primArith :: TiState -> (Int -> Int -> Int) -> TiState
+primArith (stack, dump, heap, globals, stats) op =
+  if isDataNode arg1_node && isDataNode arg2_node
+  then let (NNum a) = arg1_node
+           (NNum b) = arg2_node
+           heap' = hUpdate heap (stack !! 2) (NNum (op a b))
+       in (drop 2 stack, dump, heap', globals, stats)
+  else if isDataNode arg1_node
+       then ([arg2_addr], [stack !! 2] : dump, heap, globals, stats)
+       else ([arg1_addr], [stack !! 2] : dump, heap, globals, stats)
+  where ([arg1_addr, arg2_addr]) = getArgs heap (tail stack)
+        arg1_node = hLookup heap arg1_addr
+        arg2_node = hLookup heap arg2_addr
+
 primDyadic :: TiState -> (Node -> Node -> Node) -> TiState
-primDyadic = undefined
+primDyadic (stack,dump,heap,globals,stats) op =
+  if isDataNode arg1_node && isDataNode arg2_node
+     then (drop 2 stack
+          ,dump
+          ,hUpdate heap
+                   (stack !! 2)
+                   (op arg1_node arg2_node)
+          ,globals
+          ,stats)
+     else if isDataNode arg1_node
+          then ([arg2_addr], [stack !! 2] : dump, heap, globals, stats)
+          else ([arg1_addr], [stack !! 2] : dump, heap, globals, stats)
+  where ([arg1_addr,arg2_addr]) = getArgs heap (tail stack)
+        arg1_node = hLookup heap arg1_addr
+        arg2_node = hLookup heap arg2_addr
+
 
 nodify :: (Int -> Int -> Bool) -> (Node -> Node -> Node)
-nodify = undefined
+nodify op =
+  \a b ->
+    let (NNum a_val) = a
+        (NNum b_val) = b
+    in if op a_val b_val
+       then (NData 2 [])
+       else (NData 1 [])
 
 primIf :: TiState -> TiState
 primIf (stack,dump,heap,globals,stats) =
@@ -177,20 +223,6 @@ primConstr :: TiState -> Int -> Int -> TiState
 primConstr (stack, dump, heap, globals, stats) tag arity =
   (drop arity stack, dump, hUpdate heap (stack !! arity) (NData tag addrs), globals, stats)
   where addrs = take arity $ getArgs heap (tail stack)
-
-primArith :: TiState -> (Int -> Int -> Int) -> TiState
-primArith (stack, dump, heap, globals, stats) op =
-  if isDataNode arg1_node && isDataNode arg2_node
-  then let (NNum a) = arg1_node
-           (NNum b) = arg2_node
-           heap' = hUpdate heap (stack !! 2) (NNum (op a b))
-       in (drop 2 stack, dump, heap', globals, stats)
-  else if isDataNode arg1_node
-       then ([arg2_addr], [stack !! 2] : dump, heap, globals, stats)
-       else ([arg1_addr], [stack !! 2] : dump, heap, globals, stats)
-  where ([arg1_addr, arg2_addr]) = getArgs heap (tail stack)
-        arg1_node = hLookup heap arg1_addr
-        arg2_node = hLookup heap arg2_addr
 
 primNeg :: TiState -> TiState
 primNeg (stack, dump, heap, globals, stats) =
@@ -314,7 +346,7 @@ showResults states =
 
 showState :: TiState -> Iseq
 showState (stack,_,heap,_,_) =
-  iConcat [showStack heap stack,iNewline,showHeap heap,iNewline]
+  iConcat [showStack heap stack,iNewline]
 
 showHeap :: TiHeap -> Iseq
 showHeap heap =
