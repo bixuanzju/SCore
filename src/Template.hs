@@ -65,7 +65,9 @@ extraPreludeDefs =
          (EAp (EVar "not")
               (EAp (EAp (EVar "and")
                         (EVar "x"))
-                   (EVar "y")))))]
+                   (EVar "y")))))
+  ,("True",[],(EConstr 2 0))
+  ,("False",[],(EConstr 1 0))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -129,28 +131,36 @@ primStep state Mul = primArith state (*)
 primStep state Div = primArith state (div)
 primStep state (PrimConstr tag arity) = primConstr state tag arity
 primStep state If = primIf state
+primStep state Greater = primDyadic state (nodify (>))
+primStep state GreaterEq = primDyadic state (nodify (>=))
+primStep state Less = primDyadic state (nodify (<))
+primStep state LessEq = primDyadic state (nodify (<=))
+primStep state Eq = primDyadic state (nodify (==))
+primStep state NotEq = primDyadic state (nodify (/=))
+
+primDyadic :: TiState -> (Node -> Node -> Node) -> TiState
+primDyadic = undefined
+
+nodify :: (Int -> Int -> Bool) -> (Node -> Node -> Node)
+nodify = undefined
 
 primIf :: TiState -> TiState
 primIf (stack,dump,heap,globals,stats) =
   if isDataNode pred_node
-     then case pred_node of
-            NData 2 [] ->
-              (drop 3 stack
-              ,dump
-              ,hUpdate heap
+     then (drop 3 stack
+          ,dump
+          ,case pred_node of
+             NData 2 [] ->
+               hUpdate heap
                        (stack !! 3)
                        (NInd addr1)
-              ,globals
-              ,stats)
-            NData 1 [] ->
-              (drop 3 stack
-              ,dump
-              ,hUpdate heap
+             NData 1 [] ->
+               hUpdate heap
                        (stack !! 3)
                        (NInd addr2)
-              ,globals
-              ,stats)
-            _ -> error "Impossible happened"
+             _ -> error "Impossible happened"
+          ,globals
+          ,stats)
      else ([pred_addr]
           ,[stack !! 3] :
            dump
@@ -375,7 +385,21 @@ data Node = NAp Addr Addr
           | NPrim Name Primitive
           | NData Int [Addr]
 
-data Primitive = Neg | Add | Sub | Mul | Div | PrimConstr Int Int | If
+data Primitive
+  = Neg
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | PrimConstr Int
+               Int
+  | If
+  | Greater
+  | GreaterEq
+  | Less
+  | LessEq
+  | Eq
+  | NotEq
 
 type TiGlobals = ASSOC Name Addr
 
