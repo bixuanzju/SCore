@@ -67,7 +67,8 @@ extraPreludeDefs =
                         (EVar "x"))
                    (EVar "y")))))
   ,("True",[],(EConstr 2 0))
-  ,("False",[],(EConstr 1 0))]
+  ,("False",[],(EConstr 1 0))
+  ,("MkPair",[],(EConstr 1 2))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -92,7 +93,8 @@ primitives =
   ,("<", Less)
   ,("<=", LessEq)
   ,("==", Eq)
-  ,("~=", NotEq)]
+  ,("~=", NotEq)
+  ,("casePair", PrimCasePair)]
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
@@ -148,6 +150,17 @@ primStep state Less = primDyadic state (nodify (<))
 primStep state LessEq = primDyadic state (nodify (<=))
 primStep state Eq = primDyadic state (nodify (==))
 primStep state NotEq = primDyadic state (nodify (/=))
+primStep state PrimCasePair = primCasePair state
+
+primCasePair :: TiState -> TiState
+primCasePair (stack, dump, heap, globals, stats) =
+  if isDataNode pair_node
+  then let (NData _ [addr1, addr2]) = pair_node
+           (heap', addr) = hAlloc heap (NAp f_addr addr1)
+       in (drop 2 stack, dump, hUpdate heap' (stack !! 2) (NAp addr addr2), globals, stats)
+  else ([pair_addr], [stack !! 2] : dump, heap, globals, stats)
+  where [pair_addr, f_addr] = getArgs heap (tail stack)
+        pair_node = hLookup heap pair_addr
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith (stack, dump, heap, globals, stats) op =
@@ -432,6 +445,7 @@ data Primitive
   | LessEq
   | Eq
   | NotEq
+  | PrimCasePair
 
 type TiGlobals = ASSOC Name Addr
 
