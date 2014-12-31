@@ -68,7 +68,21 @@ extraPreludeDefs =
                    (EVar "y")))))
   ,("True",[],(EConstr 2 0))
   ,("False",[],(EConstr 1 0))
-  ,("MkPair",[],(EConstr 1 2))]
+  ,("MkPair",[],(EConstr 1 2))
+  ,("Cons",[],(EConstr 2 2))
+  ,("Nil",[],(EConstr 1 0))
+  ,("head"
+   ,["xs"]
+   ,(EAp (EAp (EAp (EVar "caseList")
+                   (EVar "xs"))
+              (EVar "abort"))
+         (EVar "K")))
+  ,("tail"
+   ,["xs"]
+   ,(EAp (EAp (EAp (EVar "caseList")
+                   (EVar "xs"))
+              (EVar "abort"))
+         (EVar "K1")))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -94,7 +108,9 @@ primitives =
   ,("<=", LessEq)
   ,("==", Eq)
   ,("~=", NotEq)
-  ,("casePair", PrimCasePair)]
+  ,("casePair", PrimCasePair)
+  ,("caseList", PrimCaseList)
+  ,("abort", PrimAbort)]
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
@@ -151,6 +167,11 @@ primStep state LessEq = primDyadic state (nodify (<=))
 primStep state Eq = primDyadic state (nodify (==))
 primStep state NotEq = primDyadic state (nodify (/=))
 primStep state PrimCasePair = primCasePair state
+primStep state PrimAbort = primAbort state
+primStep state PrimCaseList = primCaseList state
+
+primAbort :: TiState -> TiState
+primAbort = error "empty list"
 
 primCasePair :: TiState -> TiState
 primCasePair (stack, dump, heap, globals, stats) =
@@ -161,6 +182,19 @@ primCasePair (stack, dump, heap, globals, stats) =
   else ([pair_addr], [stack !! 2] : dump, heap, globals, stats)
   where [pair_addr, f_addr] = getArgs heap (tail stack)
         pair_node = hLookup heap pair_addr
+
+primCaseList :: TiState -> TiState
+primCaseList (stack, dump, heap, globals, stats) =
+  if isDataNode xs_node
+  then case xs_node of
+        NData 2 [y, ys] ->
+          let (heap', addr) = hAlloc heap (NAp cc y)
+          in (drop 3 stack, dump, hUpdate heap' (stack !! 3) (NAp addr ys), globals, stats)
+        NData 1 [] -> (drop 3 stack, dump, hUpdate heap (stack !! 3) (NInd cn), globals, stats)
+        _ -> error "Impossible happened"
+  else ([xs], [stack !! 3] : dump, heap, globals, stats)
+  where [xs, cn, cc] = getArgs heap (tail stack)
+        xs_node = hLookup heap xs
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
 primArith (stack, dump, heap, globals, stats) op =
@@ -446,6 +480,8 @@ data Primitive
   | Eq
   | NotEq
   | PrimCasePair
+  | PrimCaseList
+  | PrimAbort
 
 type TiGlobals = ASSOC Name Addr
 
