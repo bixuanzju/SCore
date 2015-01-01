@@ -30,11 +30,13 @@ runProg = showResults . eval . compile . parse
 {- Compiler -}
 compile :: CoreProgram -> TiState
 compile program =
-  (initialStack, initialTiDump, initialHeap, globals, tiStatInitial)
+  ([], initialStack, initialTiDump, initialHeap, globals, tiStatInitial)
   where sc_defs = program ++ preludeDefs ++ extraPreludeDefs
-        (initialHeap, globals) = buildInitialHeap sc_defs
-        initialStack = [address_of_main]
+        (heap, globals) = buildInitialHeap sc_defs
+        initialStack = [addr]
+        address_of_print = aLookup globals "printList" (error "printList is not defined")
         address_of_main = aLookup globals "main" (error "main is not defined")
+        (initialHeap, addr) = hAlloc heap (NAp address_of_print address_of_main)
 
 extraPreludeDefs :: [CoreScDefn]
 extraPreludeDefs =
@@ -82,7 +84,19 @@ extraPreludeDefs =
    ,(EAp (EAp (EAp (EVar "caseList")
                    (EVar "xs"))
               (EVar "abort"))
-         (EVar "K1")))]
+         (EVar "K1")))
+  ,("printList"
+   ,["xs"]
+   ,(EAp (EAp (EAp (EVar "caseList")
+                   (EVar "xs"))
+              (EVar "stop"))
+         (EVar "printCons")))
+  ,("printCons"
+   ,["h","t"]
+   ,(EAp (EAp (EVar "print")
+              (EVar "h"))
+         (EAp (EVar "printList")
+              (EVar "t"))))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -110,7 +124,9 @@ primitives =
   ,("~=", NotEq)
   ,("casePair", PrimCasePair)
   ,("caseList", PrimCaseList)
-  ,("abort", PrimAbort)]
+  ,("abort", PrimAbort)
+  ,("print", Print)
+  ,("stop", Stop)]
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
@@ -127,9 +143,7 @@ eval state = state : rest_states
 -- doAdmin = applyToStats tiStatIncSteps
 
 tiFinal :: TiState -> Bool
-tiFinal ([sole_addr], [], heap, _, _) =
-  isDataNode (hLookup heap sole_addr)
-tiFinal ([], _, _, _, _) = error "Empty stack!"
+tiFinal (_, [], [], _, _, _) = True
 tiFinal _ = False
 
 isDataNode :: Node -> Bool
@@ -138,7 +152,7 @@ isDataNode (NData _ _) = True
 isDataNode _ = False
 
 step :: TiState -> TiState
-step state@(stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
+step state@(_, stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
   where dispatch (NNum n) = numStep state n
         dispatch (NAp a1 a2) = apStep state a1 a2
         dispatch (NSupercomb sc args body) = scStep state sc args body
@@ -147,12 +161,14 @@ step state@(stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
         dispatch (NData _ _) = dataStep state
 
 dataStep :: TiState -> TiState
-dataStep (stack,dump,heap,globals,stats)
+dataStep (output, stack,dump,heap,globals,stats)
   | length stack == 1 && (not . null $ dump) =
-      (head dump,tail dump,heap,globals,stats)
+      (output, head dump,tail dump,heap,globals,stats)
   | otherwise = error "Impossible happened"
 
 primStep :: TiState -> Primitive -> TiState
+primStep state Stop = primStop state
+primStep state Print = primPrint state
 primStep state Neg = primNeg state
 primStep state Add = primArith state (+)
 primStep state Sub = primArith state (-)
@@ -170,50 +186,62 @@ primStep state PrimCasePair = primCasePair state
 primStep state PrimAbort = primAbort state
 primStep state PrimCaseList = primCaseList state
 
+primStop :: TiState -> TiState
+primStop (output, _, _, heap, globals, stats) = (output, [], [], heap, globals, stats)
+
+primPrint :: TiState -> TiState
+primPrint (output, stack, dump, heap, globals, stats)=
+  if isDataNode b1_node
+  then let (NNum n) = b1_node
+       in (output ++ [n], [b2], dump, heap, globals, stats)
+  else (output, [b1], [stack !! 2] : dump, heap, globals, stats)
+  where [b1, b2] = getArgs heap (tail stack)
+        b1_node = hLookup heap b1
+
 primAbort :: TiState -> TiState
 primAbort = error "empty list"
 
 primCasePair :: TiState -> TiState
-primCasePair (stack, dump, heap, globals, stats) =
+primCasePair (output, stack, dump, heap, globals, stats) =
   if isDataNode pair_node
   then let (NData _ [addr1, addr2]) = pair_node
            (heap', addr) = hAlloc heap (NAp f_addr addr1)
-       in (drop 2 stack, dump, hUpdate heap' (stack !! 2) (NAp addr addr2), globals, stats)
-  else ([pair_addr], [stack !! 2] : dump, heap, globals, stats)
+       in (output, drop 2 stack, dump, hUpdate heap' (stack !! 2) (NAp addr addr2), globals, stats)
+  else (output, [pair_addr], [stack !! 2] : dump, heap, globals, stats)
   where [pair_addr, f_addr] = getArgs heap (tail stack)
         pair_node = hLookup heap pair_addr
 
 primCaseList :: TiState -> TiState
-primCaseList (stack, dump, heap, globals, stats) =
+primCaseList (output, stack, dump, heap, globals, stats) =
   if isDataNode xs_node
   then case xs_node of
         NData 2 [y, ys] ->
           let (heap', addr) = hAlloc heap (NAp cc y)
-          in (drop 3 stack, dump, hUpdate heap' (stack !! 3) (NAp addr ys), globals, stats)
-        NData 1 [] -> (drop 3 stack, dump, hUpdate heap (stack !! 3) (NInd cn), globals, stats)
+          in (output, drop 3 stack, dump, hUpdate heap' (stack !! 3) (NAp addr ys), globals, stats)
+        NData 1 [] -> (output, drop 3 stack, dump, hUpdate heap (stack !! 3) (NInd cn), globals, stats)
         _ -> error "Impossible happened"
-  else ([xs], [stack !! 3] : dump, heap, globals, stats)
+  else (output, [xs], [stack !! 3] : dump, heap, globals, stats)
   where [xs, cn, cc] = getArgs heap (tail stack)
         xs_node = hLookup heap xs
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
-primArith (stack, dump, heap, globals, stats) op =
+primArith (output, stack, dump, heap, globals, stats) op =
   if isDataNode arg1_node && isDataNode arg2_node
   then let (NNum a) = arg1_node
            (NNum b) = arg2_node
            heap' = hUpdate heap (stack !! 2) (NNum (op a b))
-       in (drop 2 stack, dump, heap', globals, stats)
+       in (output, drop 2 stack, dump, heap', globals, stats)
   else if isDataNode arg1_node
-       then ([arg2_addr], [stack !! 2] : dump, heap, globals, stats)
-       else ([arg1_addr], [stack !! 2] : dump, heap, globals, stats)
+       then (output, [arg2_addr], [stack !! 2] : dump, heap, globals, stats)
+       else (output, [arg1_addr], [stack !! 2] : dump, heap, globals, stats)
   where ([arg1_addr, arg2_addr]) = getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
 
 primDyadic :: TiState -> (Node -> Node -> Node) -> TiState
-primDyadic (stack,dump,heap,globals,stats) op =
+primDyadic (output, stack,dump,heap,globals,stats) op =
   if isDataNode arg1_node && isDataNode arg2_node
-     then (drop 2 stack
+     then (output, drop 2 stack
           ,dump
           ,hUpdate heap
                    (stack !! 2)
@@ -221,8 +249,8 @@ primDyadic (stack,dump,heap,globals,stats) op =
           ,globals
           ,stats)
      else if isDataNode arg1_node
-          then ([arg2_addr], [stack !! 2] : dump, heap, globals, stats)
-          else ([arg1_addr], [stack !! 2] : dump, heap, globals, stats)
+          then (output, [arg2_addr], [stack !! 2] : dump, heap, globals, stats)
+          else (output, [arg1_addr], [stack !! 2] : dump, heap, globals, stats)
   where ([arg1_addr,arg2_addr]) = getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
@@ -238,9 +266,10 @@ nodify op =
        else (NData 1 [])
 
 primIf :: TiState -> TiState
-primIf (stack,dump,heap,globals,stats) =
+primIf (output,stack,dump,heap,globals,stats) =
   if isDataNode pred_node
-     then (drop 3 stack
+     then (output
+          ,drop 3 stack
           ,dump
           ,case pred_node of
              NData 2 [] ->
@@ -254,7 +283,8 @@ primIf (stack,dump,heap,globals,stats) =
              _ -> error "Impossible happened"
           ,globals
           ,stats)
-     else ([pred_addr]
+     else (output
+          ,[pred_addr]
           ,[stack !! 3] :
            dump
           ,heap
@@ -267,39 +297,39 @@ primIf (stack,dump,heap,globals,stats) =
 
 
 primConstr :: TiState -> Int -> Int -> TiState
-primConstr (stack, dump, heap, globals, stats) tag arity =
-  (drop arity stack, dump, hUpdate heap (stack !! arity) (NData tag addrs), globals, stats)
+primConstr (output, stack, dump, heap, globals, stats) tag arity =
+  (output, drop arity stack, dump, hUpdate heap (stack !! arity) (NData tag addrs), globals, stats)
   where addrs = take arity $ getArgs heap (tail stack)
 
 primNeg :: TiState -> TiState
-primNeg (stack, dump, heap, globals, stats) =
+primNeg (output, stack, dump, heap, globals, stats) =
   if isDataNode arg_node
   then let (NNum n) = arg_node
            heap' = hUpdate heap (stack !! 1) (NNum (negate n))
-       in (tail stack, dump, heap', globals, stats)
-  else ([arg_addr], [stack !! 1] : dump, heap, globals, stats)
+       in (output, tail stack, dump, heap', globals, stats)
+  else (output, [arg_addr], [stack !! 1] : dump, heap, globals, stats)
   where arg_addr = head $ getArgs heap (tail stack)
         arg_node = hLookup heap arg_addr
 
 indStep :: TiState -> Addr -> TiState
-indStep (stack, dump, heap, globals, stats) addr =
-  (addr:(tail stack), dump, heap, globals, stats)
+indStep (output, stack, dump, heap, globals, stats) addr =
+  (output, addr:(tail stack), dump, heap, globals, stats)
 
 numStep :: TiState -> Int -> TiState
-numStep (stack, dump, heap, globals, stats) _
-  | length stack == 1 && (not . null $ dump) = (head dump, tail dump, heap, globals, stats)
+numStep (output, stack, dump, heap, globals, stats) _
+  | length stack == 1 && (not . null $ dump) = (output, head dump, tail dump, heap, globals, stats)
   | otherwise = error "Number applied as a function"
 
 apStep :: TiState -> Addr -> Addr -> TiState
-apStep (stack, dump, heap, globals, stats) a1 a2 =
+apStep (output, stack, dump, heap, globals, stats) a1 a2 =
   case (hLookup heap a2) of
-   (NInd a3) -> (stack, dump, hUpdate heap (head stack) (NAp a1 a3), globals, stats)
-   _ -> (a1:stack, dump, heap, globals, stats)
+   (NInd a3) -> (output, stack, dump, hUpdate heap (head stack) (NAp a1 a3), globals, stats)
+   _ -> (output, a1:stack, dump, heap, globals, stats)
 
 
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
-scStep (stack, dump, heap, globals, stats) sc_name arg_names body =
-  (new_stack, dump, new_heap, globals, tiStatIncSteps stats)
+scStep (output, stack, dump, heap, globals, stats) sc_name arg_names body =
+  (output, new_stack, dump, new_heap, globals, tiStatIncSteps stats)
   where new_stack = if (length arg_names) >= (length stack)
                     then error (sc_name ++ " applied to too few arguments")
                     else (drop (length arg_names) stack)
@@ -392,7 +422,7 @@ showResults states =
   iConcat [iLayn (map showState states),showStats (last states)]
 
 showState :: TiState -> Iseq
-showState (stack,_,heap,_,_) =
+showState (_, stack,_,heap,_,_) =
   iConcat [showStack heap stack,iNewline]
 
 showHeap :: TiHeap -> Iseq
@@ -441,12 +471,23 @@ showFWAddr addr = iStr (space (4 - length str) ++ str)
   where str = show addr
 
 showStats :: TiState -> Iseq
-showStats (_, _, heap, _, stats) =
-  iConcat [ iNewline, iNewline, iStr "Total number of SC reductions = ",
-            iNum (tiStatGetSteps stats), iNewline,
-            iStr "Heap size = ", iNum (hSize heap)]
+showStats (output,_,_,heap,_,stats) =
+  iConcat [iNewline
+          ,iNewline
+          ,iStr "The outcome = ["
+          ,iInterleave (iStr ",")
+                       (map iNum output)
+          ,iStr "]"
+          ,iNewline
+          ,iStr "Total number of SC reductions = "
+          ,iNum (tiStatGetSteps stats)
+          ,iNewline
+          ,iStr "Heap size = "
+          ,iNum (hSize heap)]
 
-type TiState = (TiStack, TiDump, TiHeap, TiGlobals, TiStats)
+type TiState = (Output, TiStack, TiDump, TiHeap, TiGlobals, TiStats)
+
+type Output = [Int]
 
 type TiStack = [Addr]
 
@@ -482,6 +523,8 @@ data Primitive
   | PrimCasePair
   | PrimCaseList
   | PrimAbort
+  | Print
+  | Stop
 
 type TiGlobals = ASSOC Name Addr
 
@@ -497,5 +540,5 @@ tiStatGetSteps :: TiStats -> Int
 tiStatGetSteps = id
 
 applyToStats :: (TiStats -> TiStats) -> TiState -> TiState
-applyToStats stats_fun (stack,dump,heap,sc_defs,stats) =
-  (stack,dump,heap,sc_defs,stats_fun stats)
+applyToStats stats_fun (output,stack,dump,heap,sc_defs,stats) =
+  (output, stack,dump,heap,sc_defs,stats_fun stats)
