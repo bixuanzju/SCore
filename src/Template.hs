@@ -170,9 +170,8 @@ step state@(_,stack,_,heap,_,_) =
 
 dataStep :: TiState -> TiState
 dataStep (output,stack,dump,heap,globals,stats)
-  | length stack == 1 &&
-      (not . null $ dump) =
-    (output,head dump,tail dump,heap,globals,stats)
+  | not . null $ dump =
+    (output,drop (head dump) stack,tail dump,heap,globals,stats)
   | otherwise = error "Impossible happened"
 
 primStep :: TiState -> Primitive -> TiState
@@ -182,12 +181,19 @@ primStop :: TiState -> TiState
 primStop (output, _, _, heap, globals, stats) = (output, [], [], heap, globals, stats)
 
 primPrint :: TiState -> TiState
-primPrint (output, stack, dump, heap, globals, stats)
+primPrint (output,stack,dump,heap,globals,stats)
   | isDataNode b1_node =
     let (NNum n) = b1_node
-    in (output ++ [n], [b2], dump, heap, globals, stats)
-  | otherwise =  (output, [b1], [stack !! 2] : dump, heap, globals, stats)
-  where [b1, b2] = getArgs heap (tail stack)
+    in (output ++
+        [n]
+       ,[b2]
+       ,dump
+       ,heap
+       ,globals
+       ,stats)
+  | otherwise =
+    (output,b1 : stack,3 : dump,heap,globals,stats)
+  where b1:b2:_ = getArgs heap (tail stack)
         b1_node = hLookup heap b1
 
 primAbort :: TiState -> TiState
@@ -208,14 +214,8 @@ primCasePair (output,stack,dump,heap,globals,stats)
        ,globals
        ,stats)
   | otherwise =
-    (output
-    ,[pair_addr]
-    ,[stack !! 2] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
-  where [pair_addr,f_addr] =
+    (output,pair_addr : stack,3 : dump,heap,globals,stats)
+  where pair_addr:f_addr:_ =
           getArgs heap (tail stack)
         pair_node = hLookup heap pair_addr
 
@@ -244,14 +244,8 @@ primCaseList (output,stack,dump,heap,globals,stats)
         ,stats)
       _ -> error "Impossible happened"
   | otherwise =
-    (output
-    ,[xs]
-    ,[stack !! 3] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
-  where [xs,cn,cc] = getArgs heap (tail stack)
+    (output,xs : stack,4 : dump,heap,globals,stats)
+  where xs:cn:cc:_ = getArgs heap (tail stack)
         xs_node = hLookup heap xs
 
 primArith :: (Int -> Int -> Int) -> TiState -> TiState
@@ -265,22 +259,10 @@ primArith op (output,stack,dump,heap,globals,stats)
                   (NNum (op a b))
     in (output,drop 2 stack,dump,heap',globals,stats)
   | isDataNode arg1_node =
-    (output
-    ,[arg2_addr]
-    ,[stack !! 2] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
+    (output,arg2_addr : stack,3 : dump,heap,globals,stats)
   | otherwise =
-    (output
-    ,[arg1_addr]
-    ,[stack !! 2] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
-  where [arg1_addr,arg2_addr] =
+    (output,arg1_addr : stack,3 : dump,heap,globals,stats)
+  where arg1_addr:arg2_addr:_ =
           getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
@@ -297,22 +279,10 @@ primDyadic bop (output,stack,dump,heap,globals,stats)
     ,globals
     ,stats)
   | isDataNode arg1_node =
-    (output
-    ,[arg2_addr]
-    ,[stack !! 2] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
+    (output,arg2_addr : stack,3 : dump,heap,globals,stats)
   | otherwise =
-    (output
-    ,[arg1_addr]
-    ,[stack !! 2] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
-  where [arg1_addr,arg2_addr] =
+    (output,arg1_addr : stack,3 : dump,heap,globals,stats)
+  where arg1_addr:arg2_addr:_ =
           getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
@@ -346,23 +316,26 @@ primIf (output,stack,dump,heap,globals,stats)
     ,globals
     ,stats)
   | otherwise =
-    (output
-    ,[pred_addr]
-    ,[stack !! 3] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
-  where [pred_addr,addr1,addr2] =
+    (output,pred_addr : stack,4 : dump,heap,globals,stats)
+  where pred_addr:addr1:addr2:_ =
           getArgs heap (tail stack)
         pred_node = hLookup heap pred_addr
 
 
 
 primConstr :: Int -> Int -> TiState -> TiState
-primConstr tag arity (output, stack, dump, heap, globals, stats) =
-  (output, drop arity stack, dump, hUpdate heap (stack !! arity) (NData tag addrs), globals, stats)
-  where addrs = take arity $ getArgs heap (tail stack)
+primConstr tag arity (output,stack,dump,heap,globals,stats) =
+  (output
+  ,drop arity stack
+  ,dump
+  ,hUpdate heap
+           (stack !! arity)
+           (NData tag addrs)
+  ,globals
+  ,stats)
+  where addrs =
+          take arity $
+          getArgs heap (tail stack)
 
 primNeg :: TiState -> TiState
 primNeg (output,stack,dump,heap,globals,stats)
@@ -374,13 +347,7 @@ primNeg (output,stack,dump,heap,globals,stats)
                   (NNum (negate n))
     in (output,tail stack,dump,heap',globals,stats)
   | otherwise =
-    (output
-    ,[arg_addr]
-    ,[stack !! 1] :
-     dump
-    ,heap
-    ,globals
-    ,stats)
+    (output,arg_addr : stack,2 : dump,heap,globals,stats)
   where arg_addr =
           head $
           getArgs heap (tail stack)
@@ -391,9 +358,11 @@ indStep (output, stack, dump, heap, globals, stats) addr =
   (output, addr: tail stack, dump, heap, globals, stats)
 
 numStep :: TiState -> Int -> TiState
-numStep (output, stack, dump, heap, globals, stats) _
-  | length stack == 1 && (not . null $ dump) = (output, head dump, tail dump, heap, globals, stats)
-  | otherwise = error "Number applied as a function"
+numStep (output,stack,dump,heap,globals,stats) _
+  | not . null $ dump =
+    (output,drop (head dump) stack,tail dump,heap,globals,stats)
+  | otherwise =
+    error "Number applied as a function"
 
 apStep :: TiState -> Addr -> Addr -> TiState
 apStep (output, stack, dump, heap, globals, stats) a1 a2 =
@@ -565,7 +534,7 @@ type Output = [Int]
 
 type TiStack = [Addr]
 
-type TiDump = [TiStack]
+type TiDump = [Int]
 
 initialTiDump :: TiDump
 initialTiDump = []
