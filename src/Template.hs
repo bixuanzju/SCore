@@ -43,31 +43,31 @@ extraPreludeDefs =
   [("and"
    ,["x","y"]
    ,EAp (EAp (EAp (EVar "if")
-                   (EVar "x"))
-              (EVar "y"))
-         (EConstr 1 0))
+                  (EVar "x"))
+             (EVar "y"))
+        (EConstr 1 0))
   ,("or"
    ,["x","y"]
    ,EAp (EAp (EAp (EVar "if")
-                   (EVar "x"))
-              (EConstr 2 0))
-         (EVar "y"))
+                  (EVar "x"))
+             (EConstr 2 0))
+        (EVar "y"))
   ,("not"
    ,["x"]
    ,EAp (EAp (EAp (EVar "if")
-                   (EVar "x"))
-              (EConstr 1 0))
-         (EConstr 2 0))
+                  (EVar "x"))
+             (EConstr 1 0))
+        (EConstr 2 0))
   ,("xor"
    ,["x","y"]
    ,EAp (EAp (EVar "and")
-              (EAp (EAp (EVar "or")
-                        (EVar "x"))
-                   (EVar "y")))
-         (EAp (EVar "not")
-              (EAp (EAp (EVar "and")
-                        (EVar "x"))
-                   (EVar "y"))))
+             (EAp (EAp (EVar "or")
+                       (EVar "x"))
+                  (EVar "y")))
+        (EAp (EVar "not")
+             (EAp (EAp (EVar "and")
+                       (EVar "x"))
+                  (EVar "y"))))
   ,("True",[],EConstr 2 0)
   ,("False",[],EConstr 1 0)
   ,("MkPair",[],EConstr 1 2)
@@ -76,27 +76,32 @@ extraPreludeDefs =
   ,("head"
    ,["xs"]
    ,EAp (EAp (EAp (EVar "caseList")
-                   (EVar "xs"))
-              (EVar "abort"))
-         (EVar "K"))
+                  (EVar "xs"))
+             (EVar "abort"))
+        (EVar "K"))
   ,("tail"
    ,["xs"]
    ,EAp (EAp (EAp (EVar "caseList")
-                   (EVar "xs"))
-              (EVar "abort"))
-         (EVar "K1"))
+                  (EVar "xs"))
+             (EVar "abort"))
+        (EVar "K1"))
   ,("printList"
    ,["xs"]
    ,EAp (EAp (EAp (EVar "caseList")
-                   (EVar "xs"))
-              (EVar "stop"))
-         (EVar "printCons"))
+                  (EVar "xs"))
+             (EVar "stop"))
+        (EVar "printCons"))
   ,("printCons"
    ,["h","t"]
    ,EAp (EAp (EVar "print")
-              (EVar "h"))
-         (EAp (EVar "printList")
-              (EVar "t")))]
+             (EVar "h"))
+        (EAp (EVar "printList")
+             (EVar "t")))
+  ,("sig"
+   ,["x"]
+   ,EAp (EAp (EVar "Cons")
+             (EVar "x"))
+        (EVar "Nil"))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -110,23 +115,23 @@ allocatePrim heap (name, prim) = (heap', (name, addr))
 
 primitives :: ASSOC Name Primitive
 primitives =
-  [("negate",Neg)
-  ,("+",Add)
-  ,("-",Sub)
-  ,("*",Mul)
-  ,("/",Div)
-  ,("if",If)
-  ,(">",Greater)
-  ,(">=",GreaterEq)
-  ,("<", Less)
-  ,("<=", LessEq)
-  ,("==", Eq)
-  ,("~=", NotEq)
-  ,("casePair", PrimCasePair)
-  ,("caseList", PrimCaseList)
-  ,("abort", PrimAbort)
-  ,("print", Print)
-  ,("stop", Stop)]
+  [("negate",primNeg)
+  ,("+",primArith (+))
+  ,("-",primArith (-))
+  ,("*",primArith (*))
+  ,("/",primArith div)
+  ,("if",primIf)
+  ,(">",primDyadic (>))
+  ,(">=",primDyadic (>=))
+  ,("<", primDyadic (<))
+  ,("<=", primDyadic (<=))
+  ,("==", primDyadic (==))
+  ,("~=", primDyadic (/=))
+  ,("casePair", primCasePair)
+  ,("caseList", primCaseList)
+  ,("abort", primAbort)
+  ,("print", primPrint)
+  ,("stop", primStop)]
 
 allocateSc :: TiHeap -> CoreScDefn -> (TiHeap, (Name, Addr))
 allocateSc heap (name, args, body) = (h, (name, addr))
@@ -167,24 +172,7 @@ dataStep (output, stack,dump,heap,globals,stats)
   | otherwise = error "Impossible happened"
 
 primStep :: TiState -> Primitive -> TiState
-primStep state Stop = primStop state
-primStep state Print = primPrint state
-primStep state Neg = primNeg state
-primStep state Add = primArith state (+)
-primStep state Sub = primArith state (-)
-primStep state Mul = primArith state (*)
-primStep state Div = primArith state div
-primStep state (PrimConstr tag arity) = primConstr state tag arity
-primStep state If = primIf state
-primStep state Greater = primDyadic state (nodify (>))
-primStep state GreaterEq = primDyadic state (nodify (>=))
-primStep state Less = primDyadic state (nodify (<))
-primStep state LessEq = primDyadic state (nodify (<=))
-primStep state Eq = primDyadic state (nodify (==))
-primStep state NotEq = primDyadic state (nodify (/=))
-primStep state PrimCasePair = primCasePair state
-primStep state PrimAbort = primAbort state
-primStep state PrimCaseList = primCaseList state
+primStep state prim = prim state
 
 primStop :: TiState -> TiState
 primStop (output, _, _, heap, globals, stats) = (output, [], [], heap, globals, stats)
@@ -224,8 +212,8 @@ primCaseList (output, stack, dump, heap, globals, stats) =
   where [xs, cn, cc] = getArgs heap (tail stack)
         xs_node = hLookup heap xs
 
-primArith :: TiState -> (Int -> Int -> Int) -> TiState
-primArith (output,stack,dump,heap,globals,stats) op
+primArith :: (Int -> Int -> Int) -> TiState -> TiState
+primArith op (output,stack,dump,heap,globals,stats)
   | isDataNode arg1_node && isDataNode arg2_node =
     let (NNum a) = arg1_node
         (NNum b) = arg2_node
@@ -255,8 +243,8 @@ primArith (output,stack,dump,heap,globals,stats) op
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
 
-primDyadic :: TiState -> (Node -> Node -> Node) -> TiState
-primDyadic (output,stack,dump,heap,globals,stats) op
+primDyadic :: (Int -> Int -> Bool) -> TiState -> TiState
+primDyadic bop (output,stack,dump,heap,globals,stats)
   | isDataNode arg1_node && isDataNode arg2_node =
     (output
     ,drop 2 stack
@@ -286,6 +274,7 @@ primDyadic (output,stack,dump,heap,globals,stats) op
           getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
+        op = nodify bop
 
 
 nodify :: (Int -> Int -> Bool) -> Node -> Node -> Node
@@ -327,8 +316,8 @@ primIf (output,stack,dump,heap,globals,stats) =
 
 
 
-primConstr :: TiState -> Int -> Int -> TiState
-primConstr (output, stack, dump, heap, globals, stats) tag arity =
+primConstr :: Int -> Int -> TiState -> TiState
+primConstr tag arity (output, stack, dump, heap, globals, stats) =
   (output, drop arity stack, dump, hUpdate heap (stack !! arity) (NData tag addrs), globals, stats)
   where addrs = take arity $ getArgs heap (tail stack)
 
@@ -389,7 +378,7 @@ instantiateConstr :: Int -> Int -> TiHeap -> ASSOC Name Addr -> (TiHeap, Addr)
 instantiateConstr tag arity heap _ =
   if arity == 0 -- Need to apply it immediately
   then hAlloc heap (NData tag [])
-  else hAlloc heap (NPrim "Pack" (PrimConstr tag arity))
+  else hAlloc heap (NPrim "Pack" (primConstr tag arity))
 
 instantiateLet :: IsRec
                -> [(Name,CoreExpr)]
@@ -535,26 +524,7 @@ data Node = NAp Addr Addr
           | NPrim Name Primitive
           | NData Int [Addr]
 
-data Primitive
-  = Neg
-  | Add
-  | Sub
-  | Mul
-  | Div
-  | PrimConstr Int
-               Int
-  | If
-  | Greater
-  | GreaterEq
-  | Less
-  | LessEq
-  | Eq
-  | NotEq
-  | PrimCasePair
-  | PrimCaseList
-  | PrimAbort
-  | Print
-  | Stop
+type Primitive = TiState -> TiState
 
 type TiGlobals = ASSOC Name Addr
 
