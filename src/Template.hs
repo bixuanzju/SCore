@@ -42,61 +42,61 @@ extraPreludeDefs :: [CoreScDefn]
 extraPreludeDefs =
   [("and"
    ,["x","y"]
-   ,(EAp (EAp (EAp (EVar "if")
+   ,EAp (EAp (EAp (EVar "if")
                    (EVar "x"))
               (EVar "y"))
-         (EConstr 1 0)))
+         (EConstr 1 0))
   ,("or"
    ,["x","y"]
-   ,(EAp (EAp (EAp (EVar "if")
+   ,EAp (EAp (EAp (EVar "if")
                    (EVar "x"))
               (EConstr 2 0))
-         (EVar "y")))
+         (EVar "y"))
   ,("not"
    ,["x"]
-   ,(EAp (EAp (EAp (EVar "if")
+   ,EAp (EAp (EAp (EVar "if")
                    (EVar "x"))
               (EConstr 1 0))
-         (EConstr 2 0)))
+         (EConstr 2 0))
   ,("xor"
    ,["x","y"]
-   ,(EAp (EAp (EVar "and")
+   ,EAp (EAp (EVar "and")
               (EAp (EAp (EVar "or")
                         (EVar "x"))
                    (EVar "y")))
          (EAp (EVar "not")
               (EAp (EAp (EVar "and")
                         (EVar "x"))
-                   (EVar "y")))))
-  ,("True",[],(EConstr 2 0))
-  ,("False",[],(EConstr 1 0))
-  ,("MkPair",[],(EConstr 1 2))
-  ,("Cons",[],(EConstr 2 2))
-  ,("Nil",[],(EConstr 1 0))
+                   (EVar "y"))))
+  ,("True",[],EConstr 2 0)
+  ,("False",[],EConstr 1 0)
+  ,("MkPair",[],EConstr 1 2)
+  ,("Cons",[],EConstr 2 2)
+  ,("Nil",[],EConstr 1 0)
   ,("head"
    ,["xs"]
-   ,(EAp (EAp (EAp (EVar "caseList")
+   ,EAp (EAp (EAp (EVar "caseList")
                    (EVar "xs"))
               (EVar "abort"))
-         (EVar "K")))
+         (EVar "K"))
   ,("tail"
    ,["xs"]
-   ,(EAp (EAp (EAp (EVar "caseList")
+   ,EAp (EAp (EAp (EVar "caseList")
                    (EVar "xs"))
               (EVar "abort"))
-         (EVar "K1")))
+         (EVar "K1"))
   ,("printList"
    ,["xs"]
-   ,(EAp (EAp (EAp (EVar "caseList")
+   ,EAp (EAp (EAp (EVar "caseList")
                    (EVar "xs"))
               (EVar "stop"))
-         (EVar "printCons")))
+         (EVar "printCons"))
   ,("printCons"
    ,["h","t"]
-   ,(EAp (EAp (EVar "print")
+   ,EAp (EAp (EVar "print")
               (EVar "h"))
          (EAp (EVar "printList")
-              (EVar "t"))))]
+              (EVar "t")))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -173,7 +173,7 @@ primStep state Neg = primNeg state
 primStep state Add = primArith state (+)
 primStep state Sub = primArith state (-)
 primStep state Mul = primArith state (*)
-primStep state Div = primArith state (div)
+primStep state Div = primArith state div
 primStep state (PrimConstr tag arity) = primConstr state tag arity
 primStep state If = primIf state
 primStep state Greater = primDyadic state (nodify (>))
@@ -225,45 +225,76 @@ primCaseList (output, stack, dump, heap, globals, stats) =
         xs_node = hLookup heap xs
 
 primArith :: TiState -> (Int -> Int -> Int) -> TiState
-primArith (output, stack, dump, heap, globals, stats) op =
-  if isDataNode arg1_node && isDataNode arg2_node
-  then let (NNum a) = arg1_node
-           (NNum b) = arg2_node
-           heap' = hUpdate heap (stack !! 2) (NNum (op a b))
-       in (output, drop 2 stack, dump, heap', globals, stats)
-  else if isDataNode arg1_node
-       then (output, [arg2_addr], [stack !! 2] : dump, heap, globals, stats)
-       else (output, [arg1_addr], [stack !! 2] : dump, heap, globals, stats)
-  where ([arg1_addr, arg2_addr]) = getArgs heap (tail stack)
+primArith (output,stack,dump,heap,globals,stats) op
+  | isDataNode arg1_node && isDataNode arg2_node =
+    let (NNum a) = arg1_node
+        (NNum b) = arg2_node
+        heap' =
+          hUpdate heap
+                  (stack !! 2)
+                  (NNum (op a b))
+    in (output,drop 2 stack,dump,heap',globals,stats)
+  | isDataNode arg1_node =
+    (output
+    ,[arg2_addr]
+    ,[stack !! 2] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  | otherwise =
+    (output
+    ,[arg1_addr]
+    ,[stack !! 2] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  where [arg1_addr,arg2_addr] =
+          getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
 
 primDyadic :: TiState -> (Node -> Node -> Node) -> TiState
-primDyadic (output, stack,dump,heap,globals,stats) op =
-  if isDataNode arg1_node && isDataNode arg2_node
-     then (output, drop 2 stack
-          ,dump
-          ,hUpdate heap
-                   (stack !! 2)
-                   (op arg1_node arg2_node)
-          ,globals
-          ,stats)
-     else if isDataNode arg1_node
-          then (output, [arg2_addr], [stack !! 2] : dump, heap, globals, stats)
-          else (output, [arg1_addr], [stack !! 2] : dump, heap, globals, stats)
-  where ([arg1_addr,arg2_addr]) = getArgs heap (tail stack)
+primDyadic (output,stack,dump,heap,globals,stats) op
+  | isDataNode arg1_node && isDataNode arg2_node =
+    (output
+    ,drop 2 stack
+    ,dump
+    ,hUpdate heap
+             (stack !! 2)
+             (op arg1_node arg2_node)
+    ,globals
+    ,stats)
+  | isDataNode arg1_node =
+    (output
+    ,[arg2_addr]
+    ,[stack !! 2] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  | otherwise =
+    (output
+    ,[arg1_addr]
+    ,[stack !! 2] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  where [arg1_addr,arg2_addr] =
+          getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
 
 
-nodify :: (Int -> Int -> Bool) -> (Node -> Node -> Node)
-nodify op =
-  \a b ->
-    let (NNum a_val) = a
-        (NNum b_val) = b
-    in if op a_val b_val
-       then (NData 2 [])
-       else (NData 1 [])
+nodify :: (Int -> Int -> Bool) -> Node -> Node -> Node
+nodify op a b =
+  let (NNum a_val) = a
+      (NNum b_val) = b
+  in if op a_val b_val
+        then NData 2 []
+        else NData 1 []
 
 primIf :: TiState -> TiState
 primIf (output,stack,dump,heap,globals,stats) =
@@ -313,7 +344,7 @@ primNeg (output, stack, dump, heap, globals, stats) =
 
 indStep :: TiState -> Addr -> TiState
 indStep (output, stack, dump, heap, globals, stats) addr =
-  (output, addr:(tail stack), dump, heap, globals, stats)
+  (output, addr: tail stack, dump, heap, globals, stats)
 
 numStep :: TiState -> Int -> TiState
 numStep (output, stack, dump, heap, globals, stats) _
@@ -322,7 +353,7 @@ numStep (output, stack, dump, heap, globals, stats) _
 
 apStep :: TiState -> Addr -> Addr -> TiState
 apStep (output, stack, dump, heap, globals, stats) a1 a2 =
-  case (hLookup heap a2) of
+  case hLookup heap a2 of
    (NInd a3) -> (output, stack, dump, hUpdate heap (head stack) (NAp a1 a3), globals, stats)
    _ -> (output, a1:stack, dump, heap, globals, stats)
 
@@ -330,19 +361,18 @@ apStep (output, stack, dump, heap, globals, stats) a1 a2 =
 scStep :: TiState -> Name -> [Name] -> CoreExpr -> TiState
 scStep (output, stack, dump, heap, globals, stats) sc_name arg_names body =
   (output, new_stack, dump, new_heap, globals, tiStatIncSteps stats)
-  where new_stack = if (length arg_names) >= (length stack)
+  where new_stack = if length arg_names >= length stack
                     then error (sc_name ++ " applied to too few arguments")
-                    else (drop (length arg_names) stack)
-        new_heap = instantiateAndUpdate body (stack !! (length arg_names)) heap env
+                    else drop (length arg_names) stack
+        new_heap = instantiateAndUpdate body (stack !! length arg_names) heap env
         env = arg_bindings ++ globals
         arg_bindings = zip arg_names (getArgs heap (tail stack))
 
 getArgs :: TiHeap -> TiStack -> [Addr]
-getArgs heap stack = map get_arg stack
+getArgs heap = map get_arg
   where get_arg addr =
           let (NAp _ arg) = hLookup heap addr
           in arg
-
 
 instantiate :: CoreExpr -> TiHeap -> ASSOC Name Addr -> (TiHeap, Addr)
 instantiate (ENum n) heap _ = hAlloc heap (NNum n)
@@ -457,8 +487,8 @@ showNode :: Node -> Iseq
 showNode (NAp a1 a2) = iConcat [ iStr "NAp ", showAddr a1,
                                  iStr " ", showAddr a2]
 showNode (NSupercomb name _ _) = iStr ("NSupercomb " ++ name)
-showNode (NNum n) = (iStr "NNum ") `iAppend` (iNum n)
-showNode (NInd addr) = (iStr "NInd ") `iAppend` (showAddr addr)
+showNode (NNum n) = iStr "NNum " `iAppend` iNum n
+showNode (NInd addr) = iStr "NInd " `iAppend` showAddr addr
 showNode (NPrim name _) = iStr ("NPrim " ++ name)
 showNode (NData tag addrs) = iConcat [iStr ("NData <" ++ show tag ++ "> "),
                                       iInterleave (iStr " ") (map showAddr addrs)]
