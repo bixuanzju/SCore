@@ -157,18 +157,22 @@ isDataNode (NData _ _) = True
 isDataNode _ = False
 
 step :: TiState -> TiState
-step state@(_, stack, _, heap, _, _) = dispatch (hLookup heap (head stack))
+step state@(_,stack,_,heap,_,_) =
+  dispatch (hLookup heap (head stack))
   where dispatch (NNum n) = numStep state n
         dispatch (NAp a1 a2) = apStep state a1 a2
-        dispatch (NSupercomb sc args body) = scStep state sc args body
+        dispatch (NSupercomb sc args body) =
+          scStep state sc args body
         dispatch (NInd addr) = indStep state addr
-        dispatch (NPrim _ prim) = primStep state prim
+        dispatch (NPrim _ prim) =
+          primStep state prim
         dispatch (NData _ _) = dataStep state
 
 dataStep :: TiState -> TiState
-dataStep (output, stack,dump,heap,globals,stats)
-  | length stack == 1 && (not . null $ dump) =
-      (output, head dump,tail dump,heap,globals,stats)
+dataStep (output,stack,dump,heap,globals,stats)
+  | length stack == 1 &&
+      (not . null $ dump) =
+    (output,head dump,tail dump,heap,globals,stats)
   | otherwise = error "Impossible happened"
 
 primStep :: TiState -> Primitive -> TiState
@@ -178,11 +182,11 @@ primStop :: TiState -> TiState
 primStop (output, _, _, heap, globals, stats) = (output, [], [], heap, globals, stats)
 
 primPrint :: TiState -> TiState
-primPrint (output, stack, dump, heap, globals, stats)=
-  if isDataNode b1_node
-  then let (NNum n) = b1_node
-       in (output ++ [n], [b2], dump, heap, globals, stats)
-  else (output, [b1], [stack !! 2] : dump, heap, globals, stats)
+primPrint (output, stack, dump, heap, globals, stats)
+  | isDataNode b1_node =
+    let (NNum n) = b1_node
+    in (output ++ [n], [b2], dump, heap, globals, stats)
+  | otherwise =  (output, [b1], [stack !! 2] : dump, heap, globals, stats)
   where [b1, b2] = getArgs heap (tail stack)
         b1_node = hLookup heap b1
 
@@ -190,26 +194,64 @@ primAbort :: TiState -> TiState
 primAbort = error "empty list"
 
 primCasePair :: TiState -> TiState
-primCasePair (output, stack, dump, heap, globals, stats) =
-  if isDataNode pair_node
-  then let (NData _ [addr1, addr2]) = pair_node
-           (heap', addr) = hAlloc heap (NAp f_addr addr1)
-       in (output, drop 2 stack, dump, hUpdate heap' (stack !! 2) (NAp addr addr2), globals, stats)
-  else (output, [pair_addr], [stack !! 2] : dump, heap, globals, stats)
-  where [pair_addr, f_addr] = getArgs heap (tail stack)
+primCasePair (output,stack,dump,heap,globals,stats)
+  | isDataNode pair_node =
+    let (NData _ [addr1,addr2]) = pair_node
+        (heap',addr) =
+          hAlloc heap (NAp f_addr addr1)
+    in (output
+       ,drop 2 stack
+       ,dump
+       ,hUpdate heap'
+                (stack !! 2)
+                (NAp addr addr2)
+       ,globals
+       ,stats)
+  | otherwise =
+    (output
+    ,[pair_addr]
+    ,[stack !! 2] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  where [pair_addr,f_addr] =
+          getArgs heap (tail stack)
         pair_node = hLookup heap pair_addr
 
 primCaseList :: TiState -> TiState
-primCaseList (output, stack, dump, heap, globals, stats) =
-  if isDataNode xs_node
-  then case xs_node of
-        NData 2 [y, ys] ->
-          let (heap', addr) = hAlloc heap (NAp cc y)
-          in (output, drop 3 stack, dump, hUpdate heap' (stack !! 3) (NAp addr ys), globals, stats)
-        NData 1 [] -> (output, drop 3 stack, dump, hUpdate heap (stack !! 3) (NInd cn), globals, stats)
-        _ -> error "Impossible happened"
-  else (output, [xs], [stack !! 3] : dump, heap, globals, stats)
-  where [xs, cn, cc] = getArgs heap (tail stack)
+primCaseList (output,stack,dump,heap,globals,stats)
+  | isDataNode xs_node =
+    case xs_node of
+      NData 2 [y,ys] ->
+        let (heap',addr) = hAlloc heap (NAp cc y)
+        in (output
+           ,drop 3 stack
+           ,dump
+           ,hUpdate heap'
+                    (stack !! 3)
+                    (NAp addr ys)
+           ,globals
+           ,stats)
+      NData 1 [] ->
+        (output
+        ,drop 3 stack
+        ,dump
+        ,hUpdate heap
+                 (stack !! 3)
+                 (NInd cn)
+        ,globals
+        ,stats)
+      _ -> error "Impossible happened"
+  | otherwise =
+    (output
+    ,[xs]
+    ,[stack !! 3] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  where [xs,cn,cc] = getArgs heap (tail stack)
         xs_node = hLookup heap xs
 
 primArith :: (Int -> Int -> Int) -> TiState -> TiState
@@ -286,30 +328,31 @@ nodify op a b =
         else NData 1 []
 
 primIf :: TiState -> TiState
-primIf (output,stack,dump,heap,globals,stats) =
-  if isDataNode pred_node
-     then (output
-          ,drop 3 stack
-          ,dump
-          ,case pred_node of
-             NData 2 [] ->
-               hUpdate heap
-                       (stack !! 3)
-                       (NInd addr1)
-             NData 1 [] ->
-               hUpdate heap
-                       (stack !! 3)
-                       (NInd addr2)
-             _ -> error "Impossible happened"
-          ,globals
-          ,stats)
-     else (output
-          ,[pred_addr]
-          ,[stack !! 3] :
-           dump
-          ,heap
-          ,globals
-          ,stats)
+primIf (output,stack,dump,heap,globals,stats)
+  | isDataNode pred_node =
+    (output
+    ,drop 3 stack
+    ,dump
+    ,case pred_node of
+       NData 2 [] ->
+         hUpdate heap
+                 (stack !! 3)
+                 (NInd addr1)
+       NData 1 [] ->
+         hUpdate heap
+                 (stack !! 3)
+                 (NInd addr2)
+       _ -> error "Impossible happened"
+    ,globals
+    ,stats)
+  | otherwise =
+    (output
+    ,[pred_addr]
+    ,[stack !! 3] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
   where [pred_addr,addr1,addr2] =
           getArgs heap (tail stack)
         pred_node = hLookup heap pred_addr
@@ -322,13 +365,25 @@ primConstr tag arity (output, stack, dump, heap, globals, stats) =
   where addrs = take arity $ getArgs heap (tail stack)
 
 primNeg :: TiState -> TiState
-primNeg (output, stack, dump, heap, globals, stats) =
-  if isDataNode arg_node
-  then let (NNum n) = arg_node
-           heap' = hUpdate heap (stack !! 1) (NNum (negate n))
-       in (output, tail stack, dump, heap', globals, stats)
-  else (output, [arg_addr], [stack !! 1] : dump, heap, globals, stats)
-  where arg_addr = head $ getArgs heap (tail stack)
+primNeg (output,stack,dump,heap,globals,stats)
+  | isDataNode arg_node =
+    let (NNum n) = arg_node
+        heap' =
+          hUpdate heap
+                  (stack !! 1)
+                  (NNum (negate n))
+    in (output,tail stack,dump,heap',globals,stats)
+  | otherwise =
+    (output
+    ,[arg_addr]
+    ,[stack !! 1] :
+     dump
+    ,heap
+    ,globals
+    ,stats)
+  where arg_addr =
+          head $
+          getArgs heap (tail stack)
         arg_node = hLookup heap arg_addr
 
 indStep :: TiState -> Addr -> TiState
