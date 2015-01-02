@@ -119,9 +119,9 @@ extraPreludeDefs =
              (EVar "t")))
   ,("sig"
    ,["x"]
-   ,EAp (EAp (EVar "Cons")
+   ,EAp (EAp (EVar "cons")
              (EVar "x"))
-        (EVar "Nil"))]
+        (EVar "nil"))]
 
 buildInitialHeap :: CoreProgram -> (TiHeap, TiGlobals)
 buildInitialHeap sc_defs =
@@ -161,8 +161,8 @@ eval state = state : rest_states
                     | otherwise = eval next_state
         next_state = step state
 
--- doAdmin :: TiState -> TiState
--- doAdmin = applyToStats tiStatIncSteps
+doAdmin :: TiState -> TiState
+doAdmin = applyToStats tiStatIncSteps
 
 tiFinal :: TiState -> Bool
 tiFinal (_, [], [], _, _, _) = True
