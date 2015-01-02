@@ -72,7 +72,20 @@ extraPreludeDefs =
   ,("if",[],EVar "I")
   ,("True",["t","f"],EVar "t")
   ,("False",["t","f"],EVar "f")
-  ,("MkPair",[],EConstr 1 2)
+  ,("pair"
+   ,["a","b","f"]
+   ,EAp (EAp (EVar "f")
+             (EVar "a"))
+        (EVar "b"))
+  ,("casePair",[],EVar "I")
+  ,("fst"
+   ,["p"]
+   ,EAp (EVar "p")
+        (EVar "K"))
+  ,("snd"
+   ,["p"]
+   ,EAp (EVar "p")
+        (EVar "K1"))
   ,("Cons",[],EConstr 2 2)
   ,("Nil",[],EConstr 1 0)
   ,("head"
@@ -128,7 +141,6 @@ primitives =
   ,("<=", primDyadic (<=))
   ,("==", primDyadic (==))
   ,("~=", primDyadic (/=))
-  ,("casePair", primCasePair)
   ,("caseList", primCaseList)
   ,("abort", primAbort)
   ,("print", primPrint)
@@ -199,26 +211,6 @@ primPrint (output,stack,dump,heap,globals,stats)
 
 primAbort :: TiState -> TiState
 primAbort = error "empty list"
-
-primCasePair :: TiState -> TiState
-primCasePair (output,stack,dump,heap,globals,stats)
-  | isDataNode pair_node =
-    let (NData _ [addr1,addr2]) = pair_node
-        (heap',addr) =
-          hAlloc heap (NAp f_addr addr1)
-    in (output
-       ,drop 2 stack
-       ,dump
-       ,hUpdate heap'
-                (stack !! 2)
-                (NAp addr addr2)
-       ,globals
-       ,stats)
-  | otherwise =
-    (output,pair_addr : stack,3 : dump,heap,globals,stats)
-  where pair_addr:f_addr:_ =
-          getArgs heap (tail stack)
-        pair_node = hLookup heap pair_addr
 
 primCaseList :: TiState -> TiState
 primCaseList (output,stack,dump,heap,globals,stats)
