@@ -41,23 +41,24 @@ compile program =
 extraPreludeDefs :: [CoreScDefn]
 extraPreludeDefs =
   [("and"
-   ,["x","y"]
-   ,EAp (EAp (EAp (EVar "if")
-                  (EVar "x"))
-             (EVar "y"))
-        (EConstr 1 0))
+   ,["x","y","t","f"]
+   ,EAp (EAp (EVar "x")
+             (EAp (EAp (EVar "y")
+                       (EVar "t"))
+                  (EVar "f")))
+        (EVar "f"))
   ,("or"
-   ,["x","y"]
-   ,EAp (EAp (EAp (EVar "if")
-                  (EVar "x"))
-             (EConstr 2 0))
-        (EVar "y"))
+   ,["x","y","t","f"]
+   ,EAp (EAp (EVar "x")
+             (EVar "t"))
+        (EAp (EAp (EVar "y")
+                  (EVar "t"))
+             (EVar "f")))
   ,("not"
-   ,["x"]
-   ,EAp (EAp (EAp (EVar "if")
-                  (EVar "x"))
-             (EConstr 1 0))
-        (EConstr 2 0))
+   ,["x","t","f"]
+   ,EAp (EAp (EVar "x")
+             (EVar "f"))
+        (EVar "t"))
   ,("xor"
    ,["x","y"]
    ,EAp (EAp (EVar "and")
@@ -68,8 +69,9 @@ extraPreludeDefs =
              (EAp (EAp (EVar "and")
                        (EVar "x"))
                   (EVar "y"))))
-  ,("True",[],EConstr 2 0)
-  ,("False",[],EConstr 1 0)
+  ,("if",[],EVar "I")
+  ,("True",["t","f"],EVar "t")
+  ,("False",["t","f"],EVar "f")
   ,("MkPair",[],EConstr 1 2)
   ,("Cons",[],EConstr 2 2)
   ,("Nil",[],EConstr 1 0)
@@ -120,7 +122,6 @@ primitives =
   ,("-",primArith (-))
   ,("*",primArith (*))
   ,("/",primArith div)
-  ,("if",primIf)
   ,(">",primDyadic (>))
   ,(">=",primDyadic (>=))
   ,("<", primDyadic (<))
@@ -286,42 +287,16 @@ primDyadic bop (output,stack,dump,heap,globals,stats)
           getArgs heap (tail stack)
         arg1_node = hLookup heap arg1_addr
         arg2_node = hLookup heap arg2_addr
-        op = nodify bop
+        op = nodify bop globals
 
 
-nodify :: (Int -> Int -> Bool) -> Node -> Node -> Node
-nodify op a b =
+nodify :: (Int -> Int -> Bool) -> ASSOC Name Addr -> Node -> Node -> Node
+nodify op env a b =
   let (NNum a_val) = a
       (NNum b_val) = b
   in if op a_val b_val
-        then NData 2 []
-        else NData 1 []
-
-primIf :: TiState -> TiState
-primIf (output,stack,dump,heap,globals,stats)
-  | isDataNode pred_node =
-    (output
-    ,drop 3 stack
-    ,dump
-    ,case pred_node of
-       NData 2 [] ->
-         hUpdate heap
-                 (stack !! 3)
-                 (NInd addr1)
-       NData 1 [] ->
-         hUpdate heap
-                 (stack !! 3)
-                 (NInd addr2)
-       _ -> error "Impossible happened"
-    ,globals
-    ,stats)
-  | otherwise =
-    (output,pred_addr : stack,4 : dump,heap,globals,stats)
-  where pred_addr:addr1:addr2:_ =
-          getArgs heap (tail stack)
-        pred_node = hLookup heap pred_addr
-
-
+        then NInd (aLookup env "True" (error "True is not defined"))
+        else NInd (aLookup env "False" (error "False is not defined"))
 
 primConstr :: Int -> Int -> TiState -> TiState
 primConstr tag arity (output,stack,dump,heap,globals,stats) =
