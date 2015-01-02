@@ -395,7 +395,7 @@ instantiate (EAp e1 e2) heap env = hAlloc heap2 (NAp a1 a2)
 instantiate (EVar v) heap env = (heap, aLookup env v (error ("Undefined name " ++ show v)))
 instantiate (EConstr tag arity) heap env = instantiateConstr tag arity heap env
 instantiate (ELet isrec defs body) heap env = instantiateLet isrec defs body heap env
-instantiate (ECase e alts) heap env = error "Can't instantiate case exprs"
+instantiate (ECase _ _) _ _ = error "Can't instantiate case exprs"
 instantiate (ELam _ _) _ _ = error "Haven't implemented yet"
 
 instantiateConstr :: Int -> Int -> TiHeap -> ASSOC Name Addr -> (TiHeap, Addr)
