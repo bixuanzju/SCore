@@ -86,8 +86,13 @@ extraPreludeDefs =
    ,["p"]
    ,EAp (EVar "p")
         (EVar "K1"))
-  ,("Cons",[],EConstr 2 2)
-  ,("Nil",[],EConstr 1 0)
+  ,("caseList",[],EVar "I")
+  ,("cons"
+   ,["a","b","cn","cc"]
+   ,EAp (EAp (EVar "cc")
+             (EVar "a"))
+        (EVar "b"))
+  ,("nil",["cn","cc"],EVar "cn")
   ,("head"
    ,["xs"]
    ,EAp (EAp (EAp (EVar "caseList")
@@ -141,7 +146,7 @@ primitives =
   ,("<=", primDyadic (<=))
   ,("==", primDyadic (==))
   ,("~=", primDyadic (/=))
-  ,("caseList", primCaseList)
+  -- ,("caseList", primCaseList)
   ,("abort", primAbort)
   ,("print", primPrint)
   ,("stop", primStop)]
@@ -212,34 +217,34 @@ primPrint (output,stack,dump,heap,globals,stats)
 primAbort :: TiState -> TiState
 primAbort = error "empty list"
 
-primCaseList :: TiState -> TiState
-primCaseList (output,stack,dump,heap,globals,stats)
-  | isDataNode xs_node =
-    case xs_node of
-      NData 2 [y,ys] ->
-        let (heap',addr) = hAlloc heap (NAp cc y)
-        in (output
-           ,drop 3 stack
-           ,dump
-           ,hUpdate heap'
-                    (stack !! 3)
-                    (NAp addr ys)
-           ,globals
-           ,stats)
-      NData 1 [] ->
-        (output
-        ,drop 3 stack
-        ,dump
-        ,hUpdate heap
-                 (stack !! 3)
-                 (NInd cn)
-        ,globals
-        ,stats)
-      _ -> error "Impossible happened"
-  | otherwise =
-    (output,xs : stack,4 : dump,heap,globals,stats)
-  where xs:cn:cc:_ = getArgs heap (tail stack)
-        xs_node = hLookup heap xs
+-- primCaseList :: TiState -> TiState
+-- primCaseList (output,stack,dump,heap,globals,stats)
+--   | isDataNode xs_node =
+--     case xs_node of
+--       NData 2 [y,ys] ->
+--         let (heap',addr) = hAlloc heap (NAp cc y)
+--         in (output
+--            ,drop 3 stack
+--            ,dump
+--            ,hUpdate heap'
+--                     (stack !! 3)
+--                     (NAp addr ys)
+--            ,globals
+--            ,stats)
+--       NData 1 [] ->
+--         (output
+--         ,drop 3 stack
+--         ,dump
+--         ,hUpdate heap
+--                  (stack !! 3)
+--                  (NInd cn)
+--         ,globals
+--         ,stats)
+--       _ -> error "Impossible happened"
+--   | otherwise =
+--     (output,xs : stack,4 : dump,heap,globals,stats)
+--   where xs:cn:cc:_ = getArgs heap (tail stack)
+--         xs_node = hLookup heap xs
 
 primArith :: (Int -> Int -> Int) -> TiState -> TiState
 primArith op (output,stack,dump,heap,globals,stats)
